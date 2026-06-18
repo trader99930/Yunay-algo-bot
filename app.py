@@ -86,7 +86,7 @@ if current_usr not in mem.users_db:
         mem.users_db[current_usr] = {"api_key": "", "api_secret": "", "btc_qty": 4, "eth_qty": 4, "active": True}
 
 # =====================================================
-# PREMIUM MULTI-COLOR NEON GLOW CUSTOM CSS (BLACK BUTTONS FIXED)
+# MASTER MULTI-COLOR NEON GLOW CUSTOM CSS
 # =====================================================
 st.markdown("""
     <style>
@@ -100,11 +100,11 @@ st.markdown("""
     .header-sub-ip { color: #ffff00 !important; font-weight: bold !important; font-size: 11px; margin-top: 4px; }
     .ip-glow { color: #10b981; font-weight: bold; }
 
-    /* Structural Grid System Panels */
+    /* Structural Panels */
     .grid-panel { background-color: #0b132b !important; border: 2px solid #1e3a8a !important; border-radius: 6px !important; padding: 18px !important; margin-bottom: 15px !important; }
     .panel-heading { color: #38bdf8 !important; font-size: 13px !important; font-weight: bold !important; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px dashed #1e3a8a; padding-bottom: 6px; }
 
-    /* Widgets Ticker Configuration */
+    /* Ticker Configuration */
     .ticker-widget-card { background-color: #0d1b3e; border: 1px solid #1e3a8a; padding: 14px 18px; border-radius: 6px; margin-bottom: 5px; }
     .ticker-token-title { color: #ffff00 !important; font-size: 13px; font-weight: bold !important; }
     .ticker-dot-orange { color: #f59e0b; font-size: 14px; margin-right: 6px; }
@@ -114,14 +114,14 @@ st.markdown("""
     .rsi-grid-row { display: flex; gap: 15px; margin-top: 8px; font-size: 11px; margin-bottom: 5px; }
     .rsi-tab-item { color: #ffff00; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; }
 
-    /* Runtime Transaction Matrix Monitor */
+    /* Runtime Transaction Monitor PnL */
     .pnl-analytics-card { background-color: #060913; border: 1px solid #1e3a8a; border-radius: 4px; padding: 15px; margin-bottom: 12px; }
     .live-pnl-text { font-size: 25px !important; font-weight: bold; font-family: monospace; margin-top: 3px; }
     .pnl-green { color: #10b981 !important; }
     .pnl-red { color: #ef4444 !important; }
     .pnl-gray { color: #ffff00 !important; }
 
-    /* Entry Signals Fields Box Structure */
+    /* Signals Box Structure */
     .signal-data-box { background-color: #060913; border: 1px dashed #1e3a8a; border-radius: 6px; padding: 12px; margin-top: 5px; }
     .signal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 12px; }
     .signal-metric { color: #38bdf8 !important; font-weight: bold !important; }
@@ -133,24 +133,17 @@ st.markdown("""
     .terminal-table th { color: #38bdf8 !important; text-align: left; padding: 10px 6px; border-bottom: 2px solid #1e3a8a; font-weight: bold !important; }
     .terminal-table td { padding: 12px 6px; border-bottom: 1px solid #1e3a8a; color: #ffff00 !important; font-weight: bold !important; }
     
-    /* Logger Output Terminal Box */
+    /* Logger Box */
     .diagnostic-logger-container { background-color: #060913 !important; border: 1px solid #1e3a8a !important; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.8; color: #ffff00 !important; }
     
-    /* 📋 SPECIFIC REQUIREMENT: ALL STANDARD BACKGROUND INPUT CHUNKS FORCED TO BLACK */
-    input, .stNumberInput div[data-baseweb="input"], .stTextInput div[data-baseweb="input"] { 
-        background-color: #000000 !important; 
-        color: #ffffff !important; 
-        font-weight: bold !important; 
-        border: 2px solid #1e3a8a !important; 
-        border-radius: 4px; 
-    }
+    input { background-color: #0d1b3e !important; color: #ffffff !important; font-weight: bold !important; border: 2px solid #1e3a8a !important; border-radius: 4px; padding: 8px; }
+    div[data-testid="stVerticalBlock"] > div { background-color: transparent !important; border: none !important; padding: 0 !important; }
     
-    /* 📋 SPECIFIC REQUIREMENT: REPLACING WHITE BUTTONS AND FORM HOODS TO PURE SOLID BLACK/DARK MATRIX */
-    div.stButton > button, div[data-testid="stForm"] button, .stDownloadButton button { 
-        background-color: #000000 !important; 
-        color: #38bdf8 !important; 
+    /* 📋 FIXED: FORM AND WRAPPER BUTTON BACKGROUNDS CONVERTED TO SOLID MATTE BLACK */
+    div.stButton > button, div[data-testid="stForm"] button, .stFormSubmitButton button { 
+        background-color: #07090e !important; 
         border: 2px solid #1e3a8a !important; 
-        border-radius: 4px !important; 
+        border-radius: 6px !important; 
         font-size: 12px !important; 
         font-weight: bold !important; 
         text-transform: uppercase !important; 
@@ -158,17 +151,19 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important; 
     }
     
-    /* SPECIFIC REQUIREMENT: KEEPING INDIVIDUAL NEON HIGHLIGHT COLOR OVER PURE BLACK BACKGROUND BUTTON BUTTONS */
+    /* Controller Main Micro Switches */
     div.stButton > button[key="btn_start_runner_ctrl"] { color: #00ff00 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
     div.stButton > button[key="btn_stop_scanner_ctrl"] { color: #ff0000 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
+    div.stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #1c2d5a !important; border-color: #38bdf8 !important; box-shadow: 0px 0px 10px rgba(56, 189, 248, 0.4) !important; }
 
-    /* Button Hovers Activation System */
-    div.stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #1c2d5a !important; color: #ffffff !important; box-shadow: 0px 0px 10px rgba(56, 189, 248, 0.4) !important; }
-
-    /* Strategy Quad Switch Labels (Keep Yellow Bold) */
-    div[data-testid="stCheckbox"] label p { color: #f59e0b !important; font-weight: bold !important; font-size: 14px !important; letter-spacing: 0.5px; }
+    /* 📋 STRATEGIES ISOLATED CUSTOM LABELS CONFIGURATION */
+    .neon-green-lbl { color: #00ff00 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(0,255,0,0.6); display: inline-block; }
+    .neon-red-lbl { color: #ff0000 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(255,0,0,0.6); display: inline-block; }
     
-    /* Text Paragraph and Labels Transformation to Bright Neon Yellow */
+    /* Remove streamlit padding space inside strategy grid alignments */
+    div[data-testid="stColumn"] { display: flex; align-items: center !important; }
+    div[data-testid="stCheckbox"] label { margin-bottom: 0px !important; padding-top: 5px !important; }
+
     .stWidgetFormLabel, div[data-testid="stMarkdownContainer"] p, label { color: #ffff00 !important; font-weight: bold !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -507,14 +502,31 @@ with col_body_l:
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
+# 📋 SCOPE STABILITY INJECTION: INDEPENDENT CHECKBOX MESH TO PREVENT MIXED INTERFACE COLOURS
 with col_body_r:
     st.markdown('<div class="grid-panel" style="min-height: 250px;">', unsafe_allow_html=True)
     st.markdown('<div class="panel-heading">⚙️ QUAD-STRATEGY PIPELINE SWITCHES</div>', unsafe_allow_html=True)
     
-    mem.strategy_switches["5-STAR LONG"] = st.checkbox("1. RSI 5-STAR LONG", value=mem.strategy_switches["5-STAR LONG"])
-    mem.strategy_switches["5-STAR SHORT"] = st.checkbox("2. RSI 5-STAR SHORT", value=mem.strategy_switches["5-STAR SHORT"])
-    mem.strategy_switches["5-STAR BB BUY"] = st.checkbox("3. BOLLINGER BUY BREAKOUT", value=mem.strategy_switches["5-STAR BB BUY"])
-    mem.strategy_switches["5-STAR BB SELL"] = st.checkbox("4. BOLLINGER SELL BREAKOUT", value=mem.strategy_switches["5-STAR BB SELL"])
+    # 1. 5-STAR LONG (Neon Chamkila Green)
+    cl1, cl2 = st.columns([0.1, 0.9])
+    with cl1: mem.strategy_switches["5-STAR LONG"] = st.checkbox("", value=mem.strategy_switches["5-STAR LONG"], key="chk_5_long")
+    with cl2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">1. RSI 5-STAR LONG</span>', unsafe_allow_html=True)
+        
+    # 2. 5-STAR SHORT (Neon Chamkila Red)
+    cs1, cs2 = st.columns([0.1, 0.9])
+    with cs1: mem.strategy_switches["5-STAR SHORT"] = st.checkbox("", value=mem.strategy_switches["5-STAR SHORT"], key="chk_5_short")
+    with cs2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">2. RSI 5-STAR SHORT</span>', unsafe_allow_html=True)
+        
+    # 3. 5-STAR BB BUY (Neon Chamkila Green)
+    cb1, cb2 = st.columns([0.1, 0.9])
+    with cb1: mem.strategy_switches["5-STAR BB BUY"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB BUY"], key="chk_bb_buy")
+    with cb2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">3. BOLLINGER BUY BREAKOUT</span>', unsafe_allow_html=True)
+        
+    # 4. 5-STAR BB SELL (Neon Chamkila Red)
+    cx1, cx2 = st.columns([0.1, 0.9])
+    with cx1: mem.strategy_switches["5-STAR BB SELL"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB SELL"], key="chk_bb_sell")
+    with cx2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">4. BOLLINGER SELL BREAKOUT</span>', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
