@@ -1,9 +1,8 @@
 import streamlit as st
 import json
 import os
-import time  # 👈 Yeh import hona zaroori hai
+import time
 
-# User data ko save karne ke liye file path
 USER_DB_FILE = "users_database.json"
 
 def load_users():
@@ -20,25 +19,27 @@ def save_users(users):
         json.dump(users, f, indent=4)
 
 def auth_page():
-    # Session state variables ko initialize karna
     if "logged_in" not in st.session_state:
         st.session_state["logged_in"] = False
     if "current_user" not in st.session_state:
         st.session_state["current_user"] = None
+    if "auth_active_tab" not in st.session_state:
+        st.session_state["auth_active_tab"] = 0  # 0 = Sign In, 1 = Sign Up
 
-    # Agar user pehle se logged in hai to kuch nahi dikhana, seedhe app chalegi
     if st.session_state["logged_in"]:
         return True
 
     st.markdown("<h2 style='text-align: center; color: #f59e0b;'>🔒 QUANTUM TERMINAL ACCESS CONTROL</h2>", unsafe_allow_html=True)
     
-    # Login aur Sign Up ke liye tabs
-    tab1, tab2 = st.tabs(["🔐 SIGN IN (LOGIN)", "📝 SIGN UP (REGISTER)"])
+    # Active tab state synchronization
+    active_tab = st.radio("NAVIGATION GATEWAY", ["🔐 SIGN IN (OLD USER)", "📝 SIGN UP (NEW USER)"], 
+                          index=st.session_state["auth_active_tab"], horizontal=True, label_visibility="collapsed")
     
     users = load_users()
 
-    with tab1:
-        st.markdown("<h4 style='color: #38bdf8;'>Login to Secure Matrix</h4>", unsafe_allow_html=True)
+    if active_tab == "🔐 SIGN IN (OLD USER)":
+        st.session_state["auth_active_tab"] = 0
+        st.markdown("<h4 style='color: #38bdf8; margin-top:15px;'>Login to Secure Matrix</h4>", unsafe_allow_html=True)
         login_user = st.text_input("Username / Account Name", key="login_user_input")
         login_pass = st.text_input("Password", type="password", key="login_pass_input")
         
@@ -47,8 +48,7 @@ def auth_page():
                 st.session_state["logged_in"] = True
                 st.session_state["current_user"] = login_user
                 
-                # Agar user ne pehle se API key save ki hai to session state me load karna
-                if "mem_instance" in st.session_state and users[login_user]["api_key"]:
+                if "mem_instance" in st.session_state and users[login_user].get("api_key"):
                     mem = st.session_state["mem_instance"]
                     mem.users_db[login_user] = {
                         "api_key": users[login_user]["api_key"],
@@ -57,35 +57,35 @@ def auth_page():
                         "eth_qty": users[login_user].get("eth_qty", 4),
                         "active": True
                     }
-                st.success(f"Welcome back, {login_user}! Loading engine...")
-                time.sleep(1)  # 👈 Yahan se 'st.' hata diya hai, ab ye sahi chalega
+                st.success(f"Welcome back, {login_user}! Loading dashboard...")
+                time.sleep(0.5)
                 st.rerun()
             else:
                 st.error("❌ Invalid Username or Password")
 
-    with tab2:
-        st.markdown("<h4 style='color: #10b981;'>Create New Account</h4>", unsafe_allow_html=True)
+    elif active_tab == "📝 SIGN UP (NEW USER)":
+        st.session_state["auth_active_tab"] = 1
+        st.markdown("<h4 style='color: #10b981; margin-top:15px;'>Create New Account</h4>", unsafe_allow_html=True)
         new_user = st.text_input("Choose Username", key="reg_user_input")
         new_pass = st.text_input("Choose Password", type="password", key="reg_pass_input")
         
-        st.markdown("<p style='font-size: 11px; color: #64748b;'>Optional: Aap trading credentials abhi ya baad me dashboard par bhi onboard kar sakte hain.</p>", unsafe_allow_html=True)
-        reg_key = st.text_input("Delta Exchange API Key (Optional)", type="password", key="reg_key_input")
-        reg_sec = st.text_input("Delta Exchange API Secret (Optional)", type="password", key="reg_sec_input")
-
         if st.button("CREATE ACCOUNT", use_container_width=True):
             if not new_user or not new_pass:
                 st.error("❌ Username aur Password bharna zaroori hai!")
             elif new_user in users:
-                st.error("❌ Ye username pehle se exist karta hai. Dusra select karein.")
+                st.error("❌ Ye username pehle se exist karta hai.")
             else:
                 users[new_user] = {
                     "password": new_pass,
-                    "api_key": reg_key,
-                    "api_secret": reg_sec,
+                    "api_key": "",        
+                    "api_secret": "",     
                     "btc_qty": 4,
                     "eth_qty": 4
                 }
                 save_users(users)
-                st.success("✅ Account successfully created! Ab aap SIGN IN tab par jaakar login kar sakte hain.")
+                st.toast("✅ Account successfully created! Redirecting to Sign In...", icon="🎯")
+                st.session_state["auth_active_tab"] = 0  # Dynamic redirect trigger to Sign In
+                time.sleep(0.5)
+                st.rerun()
                 
     return False
