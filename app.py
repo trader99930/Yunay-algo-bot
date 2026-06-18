@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import urllib3
 import streamlit as st
+from auth import auth_page
 
 # ✅ SYSTEM STABILITY FOR TERMUX/IPV4
 import urllib3.util.connection as urllib3_cn
@@ -15,6 +16,11 @@ urllib3_cn.HAS_IPV6 = False
 
 # Streamlit Configuration
 st.set_page_config(page_title="Quantum Multi-User Terminal", layout="wide", initial_sidebar_state="collapsed")
+
+# --- 🔐 SECURITY GATEKEEPER BLOCK ---
+if not auth_page():
+    st.stop()  # Agar user logged in nahi hai, toh aage ka code stop ho jayega
+# --------------------------------------
 
 # =====================================================
 # PREMIUM CYBER TERMINAL CSS
@@ -172,6 +178,15 @@ def place_stop_loss(symbol, size, side, sl_price, api_key, api_secret):
     res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
     return res["result"].get("id") if res and res.get("success") else None
 
+def place_target_order(symbol, size, side, target_price, api_key, api_secret):
+    if size <= 0: return None
+    payload = {
+        "product_symbol": symbol, "size": int(size), "side": side.lower(),
+        "order_type": "limit_order", "limit_price": str(round(float(target_price), 2)), "reduce_only": True
+    }
+    res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
+    return res["result"].get("id") if res and res.get("success") else None
+
 def get_open_position_qty(symbol, api_key, api_secret):
     try:
         res = send_signed_request("GET", "/v2/positions/margined", api_key, api_secret)
@@ -237,27 +252,34 @@ def core_execution_engine(shared_mem):
                     
                     shared_mem.last_triggered_setup_info[sym]["live_pnl"] = calc_pnl
                     
+                    # 🔴 POSITION COMPLETELY CLOSED CHECK
                     if ex_qty == 0 or (trade['side'] == 'buy' and live_price <= trade['sl']) or (trade['side'] == 'sell' and live_price >= trade['sl']):
                         del shared_mem.active_trades[sym][user]
                         shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
                         add_log(f"Position closed safely for {user} on {sym}", type_icon="🛑")
                         continue
                     
-                    if trade['current_stage'] == 0 and ex_qty <= int(trade['initial_qty'] * 0.50):
-                        trade['sl'] = trade['entry_price']
+                    # 🎯 TARGET 1 HIT DYNAMIC LOGIC (50% Qty Booked)
+                    if trade['current_stage'] == 0 and ex_qty <= int(trade['initial_qty'] * 0.55):
+                        trade['sl'] = trade['entry_price']  # Trail to Cost
                         trade['current_stage'] = 1
                         shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['entry_price']} (Cost)"
-                        add_log(f"Target 1 Hit! SL shifted to Cost for {user}", type_icon="🎯")
+                        add_log(f"🎯 Target 1 Hit! 50% Qty Booked. SL Trailed to Cost for {user}", type_icon="💰")
+                    
+                    # 🎯 TARGET 2 HIT DYNAMIC LOGIC (25% More Qty Booked)
+                    if trade['current_stage'] == 1 and ex_qty <= int(trade['initial_qty'] * 0.28):
+                        trade['sl'] = trade['t1']  # Trail to Target 1
+                        trade['current_stage'] = 2
+                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)"
+                        add_log(f"🎯 Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for remaining 25% for {user}", type_icon="🚀")
 
             if shared_mem.users_db and not shared_mem.is_processing:
                 for sym in symbols:
                     
-                    # 🛡️ CRITICAL DUAL PROTECTION BLOCK (No Multiple Entries Allowed)
-                    # 1. Local Tracking Check: Agar thread memory mein trade active hai, toh aage nahi badhega.
+                    # 🛡️ CRITICAL POSITION LOCKS
                     if sym in shared_mem.active_trades and len(shared_mem.active_trades[sym]) > 0:
                         continue
                         
-                    # 2. Live Exchange API Check: Agar Exchange par kisi bhi user ki live open position padi hai (> 0), toh entry skip ho jayegi.
                     first_user = list(shared_mem.users_db.keys())[0]
                     exchange_live_qty = get_open_position_qty(sym, shared_mem.users_db[first_user]['api_key'], shared_mem.users_db[first_user]['api_secret'])
                     if exchange_live_qty > 0: 
@@ -304,14 +326,14 @@ def core_execution_engine(shared_mem):
                         risk = sl - entry
                         t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
                     
-                    # 3. 5-STAR BB BUY LOGIC (RSI Crossover 60 from below + Price > BB Upper Band)
+                    # 3. 5-STAR BB BUY LOGIC
                     elif shared_mem.strategy_switches["5-STAR BB BUY"] and rsi_15 > 60 and rsi_5 > 60 and rsi_1_prev < 61 and rsi_1 >= 60 and close_1m > df_1m["BB_up"].iloc[-2]:
                         triggered, s_key, side = True, "5-STAR BB BUY", "buy"
                         entry, sl = round(float(df_1m["high"].iloc[-2]), 2), round(float(df_1m["low"].iloc[-2]), 2)
                         risk = entry - sl
                         t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
                     
-                    # 4. 5-STAR BB SELL LOGIC (RSI Crossover 40 from above + Price < BB Lower Band)
+                    # 4. 5-STAR BB SELL LOGIC
                     elif shared_mem.strategy_switches["5-STAR BB SELL"] and rsi_15 < 40 and rsi_5 < 40 and rsi_1_prev > 39 and rsi_1 <= 40 and close_1m < df_1m["BB_low"].iloc[-2]:
                         triggered, s_key, side = True, "5-STAR BB SELL", "sell"
                         entry, sl = round(float(df_1m["low"].iloc[-2]), 2), round(float(df_1m["high"].iloc[-2]), 2)
@@ -335,14 +357,27 @@ def core_execution_engine(shared_mem):
                             
                             res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": int(u_qty), "side": side, "order_type": "market_order"} )
                             if res and res.get("success") is True:
-                                place_stop_loss(sym, u_qty, "sell" if side == "buy" else "buy", sl, u_db['api_key'], u_db['api_secret'])
+                                opposite_side = "sell" if side == "buy" else "buy"
+                                
+                                # 🛡️ 1. Real Stop Loss Order to Exchange (100% Qty)
+                                place_stop_loss(sym, u_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                                
+                                # 🎯 2. Real Target 1 Order to Exchange (50% Qty Split Booking)
+                                t1_qty = int(u_qty * 0.50)
+                                if t1_qty > 0:
+                                    place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
+                                    
+                                # 🎯 3. Real Target 2 Order to Exchange (25% Qty Split Booking)
+                                t2_qty = int(u_qty * 0.25)
+                                if t2_qty > 0:
+                                    place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
                                 
                                 if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
                                 shared_mem.active_trades[sym][user] = {
                                     'side': side, 'entry_price': entry, 'sl': sl, 't1': t1, 't2': t2,
                                     'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0
                                 }
-                                add_log(f"[REAL ORDER] {user} | {sym} | Size: {u_qty}", type_icon="🚀")
+                                add_log(f"[REAL ORDER EXECUTION] {user} | {sym} | Size: {u_qty} Lots Sent", type_icon="🚀")
                             else:
                                 err = res.get("error", "API Error")
                                 add_log(f"Order Failed for {user}: {err}", type_icon="❌")
@@ -538,9 +573,18 @@ if mem.users_db:
             st.rerun()
 
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    
+    # --- REAL LOGOUT CODE BLOCK ---
     if st.button("LOGOUT SESSION CONTROL"):
-        mem.users_db.clear()
+        active_user = st.session_state.get("current_user")
+        if active_user and active_user in mem.users_db:
+            del mem.users_db[active_user]
+        st.session_state["logged_in"] = False
+        st.session_state["current_user"] = None
+        st.success("Logged out successfully!")
+        time.sleep(1)
         st.rerun()
+    # ------------------------------
 else:
     st.markdown("<span style='color: #f43f5e; font-size:12px; font-weight:bold;'>⚠️ NO ACTIVE PROFILE FOUND. PLEASE ONBOARD REAL TRADING KEYS:</span>", unsafe_allow_html=True)
     with st.form("Onboard Credentials Setup Check", clear_on_submit=True):
