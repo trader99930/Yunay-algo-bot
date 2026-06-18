@@ -113,10 +113,10 @@ st.markdown("""
     
     .rsi-grid-row { display: flex; gap: 15px; margin-top: 8px; font-size: 11px; margin-bottom: 5px; }
     
-    /* Dynamic RSI Tabs Neon Colors */
-    .rsi-tab-item-1m { color: #ffff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; }
-    .rsi-tab-item-5m { color: #00ff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
-    .rsi-tab-item-15m { color: #ff0000 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
+    /* Dynamic RSI Tabs Neon Colors & Force Heavy Bold Font Formatting */
+    .rsi-tab-item-1m { color: #ffff00 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; }
+    .rsi-tab-item-5m { color: #00ff00 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
+    .rsi-tab-item-15m { color: #ff0000 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
 
     /* Runtime Transaction Matrix Monitor */
     .pnl-analytics-card { background-color: #060913; border: 1px solid #1e3a8a; border-radius: 4px; padding: 15px; margin-bottom: 12px; }
@@ -269,7 +269,6 @@ def core_execution_engine(shared_mem):
             for sym in symbols:
                 try:
                     r = requests.get(f"{BASE_URL}/v2/tickers/{sym}", timeout=4).json()
-                    # ✅ FIXED LOGIC TYPO (Removed random 'Image' keyword)
                     if r and "result" in r: shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
                 except: pass
 
@@ -303,7 +302,7 @@ def core_execution_engine(shared_mem):
                     if trade['current_stage'] == 1 and ex_qty <= int(trade['initial_qty'] * 0.28):
                         trade['sl'] = trade['t1']  
                         trade['current_stage'] = 2
-                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)",
+                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)"
                         add_log(f"🎯 Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for {user}", type_icon="🚀")
 
             if shared_mem.users_db and not shared_mem.is_processing:
@@ -408,7 +407,7 @@ if "thread_started" not in st.session_state:
     st.session_state["thread_started"] = True
 
 # =====================================================
-# RENDER LAYOUT
+# RENDER LAYOUT (Only Pure Numeric Values In RSI Tabs)
 # =====================================================
 st.markdown(f"""
 <div class="quantum-header-box">
@@ -420,14 +419,15 @@ st.markdown(f"""
 col_btc_w, col_eth_w = st.columns(2)
 with col_btc_w:
     btc_info = mem.last_triggered_setup_info["BTCUSD"]
+    # 📋 UPDATED: Text fields removed, only heavy bold raw dynamic values are printed inside tabs
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-orange">●</span><span class="ticker-token-title">BTCUSD Future Live</span></div>
         <div class="ticker-price-green">${mem.ticker_feeds["BTCUSD"]["ltp"]:,.2f}</div>
         <div class="rsi-grid-row">
-            <span class="rsi-tab-item-1m">1M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_1m"]:.2f}</span>
-            <span class="rsi-tab-item-5m">5M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_5m"]:.2f}</span>
-            <span class="rsi-tab-item-15m">15M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_15m"]:.2f}</span>
+            <span class="rsi-tab-item-1m">{mem.ticker_feeds["BTCUSD"]["rsi_1m"]:.2f}</span>
+            <span class="rsi-tab-item-5m">{mem.ticker_feeds["BTCUSD"]["rsi_5m"]:.2f}</span>
+            <span class="rsi-tab-item-15m">{mem.ticker_feeds["BTCUSD"]["rsi_15m"]:.2f}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -456,14 +456,15 @@ with col_btc_w:
 
 with col_eth_w:
     eth_info = mem.last_triggered_setup_info["ETHUSD"]
+    # 📋 UPDATED: Text fields removed, only heavy bold raw dynamic values are printed inside tabs
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-purple">●</span><span class="ticker-token-title">ETHUSD Future Live</span></div>
         <div class="ticker-price-green">${mem.ticker_feeds["ETHUSD"]["ltp"]:,.2f}</div>
         <div class="rsi-grid-row">
-            <span class="rsi-tab-item-1m">1M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_1m"]:.2f}</span>
-            <span class="rsi-tab-item-5m">5M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_5m"]:.2f}</span>
-            <span class="rsi-tab-item-15m">15M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_15m"]:.2f}</span>
+            <span class="rsi-tab-item-1m">{mem.ticker_feeds["ETHUSD"]["rsi_1m"]:.2f}</span>
+            <span class="rsi-tab-item-5m">{mem.ticker_feeds["ETHUSD"]["rsi_5m"]:.2f}</span>
+            <span class="rsi-tab-item-15m">{mem.ticker_feeds["ETHUSD"]["rsi_15m"]:.2f}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
