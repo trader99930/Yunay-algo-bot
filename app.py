@@ -113,7 +113,7 @@ st.markdown("""
     
     .rsi-grid-row { display: flex; gap: 15px; margin-top: 8px; font-size: 11px; margin-bottom: 5px; }
     
-    /* 📋 SPECIFIC REQUIREMENT: DYNAMIC RSI TABS NEON COLORS */
+    /* Dynamic RSI Tabs Neon Colors */
     .rsi-tab-item-1m { color: #ffff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; }
     .rsi-tab-item-5m { color: #00ff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
     .rsi-tab-item-15m { color: #ff0000 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
@@ -180,8 +180,12 @@ def get_server_ip():
 
 SERVER_IP = get_server_ip()
 
+# Automated background logger syncs with local Indian Standard Time (IST) zone
 def add_log(msg, type_icon="🚀"):
-    timestamp = time.strftime("%H:%M:%S")
+    import datetime
+    ist_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
+    timestamp = ist_time.strftime("%H:%M:%S")
+    
     full_msg = f"<div><span style='color: #38bdf8;'>[{timestamp}]</span> {type_icon} <span style='color:#ffff00; font-weight:bold;'>{msg}</span></div>"
     mem.last_terminal_logs.insert(0, full_msg)
     if len(mem.last_terminal_logs) > 20: mem.last_terminal_logs.pop()
@@ -265,6 +269,7 @@ def core_execution_engine(shared_mem):
             for sym in symbols:
                 try:
                     r = requests.get(f"{BASE_URL}/v2/tickers/{sym}", timeout=4).json()
+                    # ✅ FIXED LOGIC TYPO (Removed random 'Image' keyword)
                     if r and "result" in r: shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
                 except: pass
 
@@ -298,7 +303,7 @@ def core_execution_engine(shared_mem):
                     if trade['current_stage'] == 1 and ex_qty <= int(trade['initial_qty'] * 0.28):
                         trade['sl'] = trade['t1']  
                         trade['current_stage'] = 2
-                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)"
+                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)",
                         add_log(f"🎯 Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for {user}", type_icon="🚀")
 
             if shared_mem.users_db and not shared_mem.is_processing:
@@ -403,7 +408,7 @@ if "thread_started" not in st.session_state:
     st.session_state["thread_started"] = True
 
 # =====================================================
-# RENDER LAYOUT (With Upgraded RSI Color Tabs)
+# RENDER LAYOUT
 # =====================================================
 st.markdown(f"""
 <div class="quantum-header-box">
@@ -415,7 +420,6 @@ st.markdown(f"""
 col_btc_w, col_eth_w = st.columns(2)
 with col_btc_w:
     btc_info = mem.last_triggered_setup_info["BTCUSD"]
-    # 📋 UPDATED: 5M RSI Embedded inside Chamkila Green Tab, 15M Inside Chamkila Red Tab
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-orange">●</span><span class="ticker-token-title">BTCUSD Future Live</span></div>
@@ -452,7 +456,6 @@ with col_btc_w:
 
 with col_eth_w:
     eth_info = mem.last_triggered_setup_info["ETHUSD"]
-    # 📋 UPDATED: 5M RSI Embedded inside Chamkila Green Tab, 15M Inside Chamkila Red Tab
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-purple">●</span><span class="ticker-token-title">ETHUSD Future Live</span></div>
