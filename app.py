@@ -154,7 +154,7 @@ def add_log(msg, type_icon="🚀"):
     if len(mem.last_terminal_logs) > 20: mem.last_terminal_logs.pop()
 
 # =====================================================
-# DELTA INDIA API CONNECTORS
+# DELTA INDIA API CONNECTORS WITH DIAGNOSTIC TRACKING
 # =====================================================
 def send_signed_request(method, path, api_key, api_secret, payload=None):
     timestamp = str(int(time.time()))
@@ -176,7 +176,11 @@ def place_stop_loss(symbol, size, side, sl_price, api_key, api_secret):
         "stop_price": str(round(float(sl_price), 2)), "reduce_only": True
     }
     res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
-    return res["result"].get("id") if res and res.get("success") else None
+    if res and res.get("success") is True:
+        return res["result"].get("id")
+    else:
+        err_msg = res.get("error", {}).get("message", "Unknown Exchange Error") if isinstance(res.get("error"), dict) else res.get("error", "Unknown Error")
+        return f"ERROR: {err_msg}"
 
 def place_target_order(symbol, size, side, target_price, api_key, api_secret):
     if size <= 0: return None
@@ -185,7 +189,11 @@ def place_target_order(symbol, size, side, target_price, api_key, api_secret):
         "order_type": "limit_order", "limit_price": str(round(float(target_price), 2)), "reduce_only": True
     }
     res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
-    return res["result"].get("id") if res and res.get("success") else None
+    if res and res.get("success") is True:
+        return res["result"].get("id")
+    else:
+        err_msg = res.get("error", {}).get("message", "Unknown Exchange Error") if isinstance(res.get("error"), dict) else res.get("error", "Unknown Error")
+        return f"ERROR: {err_msg}"
 
 def get_open_position_qty(symbol, api_key, api_secret):
     try:
@@ -264,19 +272,19 @@ def core_execution_engine(shared_mem):
                         trade['sl'] = trade['entry_price']  # Trail to Cost
                         trade['current_stage'] = 1
                         shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['entry_price']} (Cost)"
-                        add_log(f"🎯 Target 1 Hit! 50% Qty Booked. SL Trailed to Cost for {user}", type_icon="💰")
+                        add_log(f"Target 1 Hit! 50% Qty Booked. SL Trailed to Cost for {user}", type_icon="💰")
                     
                     # 🎯 TARGET 2 HIT DYNAMIC LOGIC (25% More Qty Booked)
                     if trade['current_stage'] == 1 and ex_qty <= int(trade['initial_qty'] * 0.28):
                         trade['sl'] = trade['t1']  # Trail to Target 1
                         trade['current_stage'] = 2
                         shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)"
-                        add_log(f"🎯 Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for remaining 25% for {user}", type_icon="🚀")
+                        add_log(f"Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for remaining 25% for {user}", type_icon="🚀")
 
             if shared_mem.users_db and not shared_mem.is_processing:
                 for sym in symbols:
                     
-                    # 🛡️ CRITICAL POSITION LOCKS
+                    # 🛡️ CRITICAL POSITION LOCKS (No Duplicates)
                     if sym in shared_mem.active_trades and len(shared_mem.active_trades[sym]) > 0:
                         continue
                         
@@ -352,32 +360,45 @@ def core_execution_engine(shared_mem):
                         }
                         
                         for user, u_db in shared_mem.users_db.items():
-                            u_qty = u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"]
+                            u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
                             if u_db["api_key"] in ["mock", ""]: continue
                             
-                            res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": int(u_qty), "side": side, "order_type": "market_order"} )
+                            # 1. Place Main Market Order
+                            res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": u_qty, "side": side, "order_type": "market_order"} )
                             if res and res.get("success") is True:
                                 opposite_side = "sell" if side == "buy" else "buy"
                                 
-                                # 🛡️ 1. Real Stop Loss Order to Exchange (100% Qty)
-                                place_stop_loss(sym, u_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                                
-                                # 🎯 2. Real Target 1 Order to Exchange (50% Qty Split Booking)
+                                # Split Calculations for Reduce-Only Margin Lock compliance
                                 t1_qty = int(u_qty * 0.50)
-                                if t1_qty > 0:
-                                    place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
-                                    
-                                # 🎯 3. Real Target 2 Order to Exchange (25% Qty Split Booking)
                                 t2_qty = int(u_qty * 0.25)
+                                t3_qty = u_qty - (t1_qty + t2_qty)
+                                
+                                # --- SECTION A: TARGETS WITH DETAILED EXCHANGE LOGGING ---
+                                if t1_qty > 0:
+                                    t1_res = place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
+                                    if isinstance(t1_res, str) and "ERROR" in t1_res:
+                                        add_log(f"Target 1 Order Rejected: {t1_res.replace('ERROR: ', '')}", type_icon="❌")
+                                    else:
+                                        add_log(f"Target 1 Order Placed Successfully at ${t1}", type_icon="✅")
+                                        
                                 if t2_qty > 0:
-                                    place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
+                                    t2_res = place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
+                                    if isinstance(t2_res, str) and "ERROR" in t2_res:
+                                        add_log(f"Target 2 Order Rejected: {t2_res.replace('ERROR: ', '')}", type_icon="❌")
+                                    else:
+                                        add_log(f"Target 2 Order Placed Successfully at ${t2}", type_icon="✅")
+                                
+                                # --- SECTION B: CORRESPONDING SPLIT STOP LOSSES ---
+                                place_stop_loss(sym, t1_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                                place_stop_loss(sym, t2_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                                place_stop_loss(sym, t3_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
                                 
                                 if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
                                 shared_mem.active_trades[sym][user] = {
                                     'side': side, 'entry_price': entry, 'sl': sl, 't1': t1, 't2': t2,
                                     'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0
                                 }
-                                add_log(f"[REAL ORDER EXECUTION] {user} | {sym} | Size: {u_qty} Lots Sent", type_icon="🚀")
+                                add_log(f"[REAL ORDER] {user} | Splits generated for {u_qty} Lots.", type_icon="🚀")
                             else:
                                 err = res.get("error", "API Error")
                                 add_log(f"Order Failed for {user}: {err}", type_icon="❌")
@@ -574,7 +595,7 @@ if mem.users_db:
 
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
     
-    # --- REAL LOGOUT CODE BLOCK ---
+    # --- 🔐 SECURITY LOGOUT BLOCK ---
     if st.button("LOGOUT SESSION CONTROL"):
         active_user = st.session_state.get("current_user")
         if active_user and active_user in mem.users_db:
