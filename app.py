@@ -112,9 +112,13 @@ st.markdown("""
     .ticker-price-green { color: #38bdf8 !important; font-size: 28px !important; font-weight: bold; margin: 5px 0; }
     
     .rsi-grid-row { display: flex; gap: 15px; margin-top: 8px; font-size: 11px; margin-bottom: 5px; }
-    .rsi-tab-item { color: #ffff00; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; }
+    
+    /* 📋 SPECIFIC REQUIREMENT: DYNAMIC RSI TABS NEON COLORS */
+    .rsi-tab-item-1m { color: #ffff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; }
+    .rsi-tab-item-5m { color: #00ff00 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
+    .rsi-tab-item-15m { color: #ff0000 !important; font-weight: bold; background: #1e3a8a; padding: 3px 8px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
 
-    /* Runtime Transaction Monitor PnL */
+    /* Runtime Transaction Matrix Monitor */
     .pnl-analytics-card { background-color: #060913; border: 1px solid #1e3a8a; border-radius: 4px; padding: 15px; margin-bottom: 12px; }
     .live-pnl-text { font-size: 25px !important; font-weight: bold; font-family: monospace; margin-top: 3px; }
     .pnl-green { color: #10b981 !important; }
@@ -139,7 +143,7 @@ st.markdown("""
     input { background-color: #0d1b3e !important; color: #ffffff !important; font-weight: bold !important; border: 2px solid #1e3a8a !important; border-radius: 4px; padding: 8px; }
     div[data-testid="stVerticalBlock"] > div { background-color: transparent !important; border: none !important; padding: 0 !important; }
     
-    /* 📋 FIXED: FORM AND WRAPPER BUTTON BACKGROUNDS CONVERTED TO SOLID MATTE BLACK */
+    /* Form Buttons Turn Matte Black */
     div.stButton > button, div[data-testid="stForm"] button, .stFormSubmitButton button { 
         background-color: #07090e !important; 
         border: 2px solid #1e3a8a !important; 
@@ -151,16 +155,15 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important; 
     }
     
-    /* Controller Main Micro Switches */
+    /* Controller Main Buttons */
     div.stButton > button[key="btn_start_runner_ctrl"] { color: #00ff00 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
     div.stButton > button[key="btn_stop_scanner_ctrl"] { color: #ff0000 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
     div.stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #1c2d5a !important; border-color: #38bdf8 !important; box-shadow: 0px 0px 10px rgba(56, 189, 248, 0.4) !important; }
 
-    /* 📋 STRATEGIES ISOLATED CUSTOM LABELS CONFIGURATION */
+    /* STRATEGIES CUSTOM NEON LABELS */
     .neon-green-lbl { color: #00ff00 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(0,255,0,0.6); display: inline-block; }
     .neon-red-lbl { color: #ff0000 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(255,0,0,0.6); display: inline-block; }
     
-    /* Remove streamlit padding space inside strategy grid alignments */
     div[data-testid="stColumn"] { display: flex; align-items: center !important; }
     div[data-testid="stCheckbox"] label { margin-bottom: 0px !important; padding-top: 5px !important; }
 
@@ -400,7 +403,7 @@ if "thread_started" not in st.session_state:
     st.session_state["thread_started"] = True
 
 # =====================================================
-# RENDER LAYOUT
+# RENDER LAYOUT (With Upgraded RSI Color Tabs)
 # =====================================================
 st.markdown(f"""
 <div class="quantum-header-box">
@@ -412,14 +415,15 @@ st.markdown(f"""
 col_btc_w, col_eth_w = st.columns(2)
 with col_btc_w:
     btc_info = mem.last_triggered_setup_info["BTCUSD"]
+    # 📋 UPDATED: 5M RSI Embedded inside Chamkila Green Tab, 15M Inside Chamkila Red Tab
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-orange">●</span><span class="ticker-token-title">BTCUSD Future Live</span></div>
         <div class="ticker-price-green">${mem.ticker_feeds["BTCUSD"]["ltp"]:,.2f}</div>
         <div class="rsi-grid-row">
-            <span class="rsi-tab-item">1M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_1m"]:.2f}</span>
-            <span class="rsi-tab-item">5M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_5m"]:.2f}</span>
-            <span class="rsi-tab-item">15M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_15m"]:.2f}</span>
+            <span class="rsi-tab-item-1m">1M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_1m"]:.2f}</span>
+            <span class="rsi-tab-item-5m">5M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_5m"]:.2f}</span>
+            <span class="rsi-tab-item-15m">15M RSI: {mem.ticker_feeds["BTCUSD"]["rsi_15m"]:.2f}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -448,14 +452,15 @@ with col_btc_w:
 
 with col_eth_w:
     eth_info = mem.last_triggered_setup_info["ETHUSD"]
+    # 📋 UPDATED: 5M RSI Embedded inside Chamkila Green Tab, 15M Inside Chamkila Red Tab
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-purple">●</span><span class="ticker-token-title">ETHUSD Future Live</span></div>
         <div class="ticker-price-green">${mem.ticker_feeds["ETHUSD"]["ltp"]:,.2f}</div>
         <div class="rsi-grid-row">
-            <span class="rsi-tab-item">1M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_1m"]:.2f}</span>
-            <span class="rsi-tab-item">5M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_5m"]:.2f}</span>
-            <span class="rsi-tab-item">15M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_15m"]:.2f}</span>
+            <span class="rsi-tab-item-1m">1M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_1m"]:.2f}</span>
+            <span class="rsi-tab-item-5m">5M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_5m"]:.2f}</span>
+            <span class="rsi-tab-item-15m">15M RSI: {mem.ticker_feeds["ETHUSD"]["rsi_15m"]:.2f}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -502,7 +507,6 @@ with col_body_l:
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 📋 SCOPE STABILITY INJECTION: INDEPENDENT CHECKBOX MESH TO PREVENT MIXED INTERFACE COLOURS
 with col_body_r:
     st.markdown('<div class="grid-panel" style="min-height: 250px;">', unsafe_allow_html=True)
     st.markdown('<div class="panel-heading">⚙️ QUAD-STRATEGY PIPELINE SWITCHES</div>', unsafe_allow_html=True)
