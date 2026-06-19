@@ -90,21 +90,17 @@ if current_usr not in mem.users_db:
 # =====================================================
 st.markdown("""
     <style>
-    /* Global Base Design (Bright Neon Yellow Theme) */
     .stApp { background-color: #060913 !important; color: #ffff00 !important; font-family: monospace; font-weight: bold !important; }
     .block-container { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; max-width: 96% !important; }
     
-    /* Header Customization */
     .quantum-header-box { background-color: #0b132b; border: 2px solid #1e3a8a; padding: 15px 20px; border-radius: 6px; margin-bottom: 18px; }
     .header-main-title { color: #38bdf8; font-weight: bold; font-size: 17px; letter-spacing: 1px; }
     .header-sub-ip { color: #ffff00 !important; font-weight: bold !important; font-size: 11px; margin-top: 4px; }
     .ip-glow { color: #10b981; font-weight: bold; }
 
-    /* Structural Panels */
     .grid-panel { background-color: #0b132b !important; border: 2px solid #1e3a8a !important; border-radius: 6px !important; padding: 18px !important; margin-bottom: 15px !important; }
     .panel-heading { color: #38bdf8 !important; font-size: 13px !important; font-weight: bold !important; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px dashed #1e3a8a; padding-bottom: 6px; }
 
-    /* Ticker Configuration */
     .ticker-widget-card { background-color: #0d1b3e; border: 1px solid #1e3a8a; padding: 14px 18px; border-radius: 6px; margin-bottom: 5px; }
     .ticker-token-title { color: #ffff00 !important; font-size: 13px; font-weight: bold !important; }
     .ticker-dot-orange { color: #f59e0b; font-size: 14px; margin-right: 6px; }
@@ -113,37 +109,31 @@ st.markdown("""
     
     .rsi-grid-row { display: flex; gap: 15px; margin-top: 8px; font-size: 11px; margin-bottom: 5px; }
     
-    /* Dynamic RSI Tabs Neon Colors & Force Heavy Bold Font Formatting */
     .rsi-tab-item-1m { color: #ffff00 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; }
     .rsi-tab-item-5m { color: #00ff00 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
     .rsi-tab-item-15m { color: #ff0000 !important; font-weight: 900 !important; font-size: 12.5px !important; background: #1e3a8a; padding: 3px 10px; border-radius: 3px; border: 1px solid #3b82f6; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
 
-    /* Runtime Transaction Matrix Monitor */
     .pnl-analytics-card { background-color: #060913; border: 1px solid #1e3a8a; border-radius: 4px; padding: 15px; margin-bottom: 12px; }
     .live-pnl-text { font-size: 25px !important; font-weight: bold; font-family: monospace; margin-top: 3px; }
     .pnl-green { color: #10b981 !important; }
     .pnl-red { color: #ef4444 !important; }
     .pnl-gray { color: #ffff00 !important; }
 
-    /* Signals Box Structure */
     .signal-data-box { background-color: #060913; border: 1px dashed #1e3a8a; border-radius: 6px; padding: 12px; margin-top: 5px; }
     .signal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 12px; }
     .signal-metric { color: #38bdf8 !important; font-weight: bold !important; }
     .signal-value-active { color: #10b981; font-weight: bold; }
     .signal-value-waiting { color: #e2e8f0 !important; font-weight: 500 !important; font-size: 11.5px !important; }
 
-    /* Table Typography Configuration */
     .terminal-table { width: 100%; border-collapse: collapse; font-size: 12px; color: #ffff00 !important; }
     .terminal-table th { color: #38bdf8 !important; text-align: left; padding: 10px 6px; border-bottom: 2px solid #1e3a8a; font-weight: bold !important; }
     .terminal-table td { padding: 12px 6px; border-bottom: 1px solid #1e3a8a; color: #ffff00 !important; font-weight: bold !important; }
     
-    /* Logger Box */
     .diagnostic-logger-container { background-color: #060913 !important; border: 1px solid #1e3a8a !important; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.8; color: #ffff00 !important; }
     
     input { background-color: #0d1b3e !important; color: #ffffff !important; font-weight: bold !important; border: 2px solid #1e3a8a !important; border-radius: 4px; padding: 8px; }
     div[data-testid="stVerticalBlock"] > div { background-color: transparent !important; border: none !important; padding: 0 !important; }
     
-    /* Form Buttons Turn Matte Black */
     div.stButton > button, div[data-testid="stForm"] button, .stFormSubmitButton button { 
         background-color: #07090e !important; 
         border: 2px solid #1e3a8a !important; 
@@ -155,12 +145,10 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important; 
     }
     
-    /* Controller Main Buttons */
     div.stButton > button[key="btn_start_runner_ctrl"] { color: #00ff00 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
     div.stButton > button[key="btn_stop_scanner_ctrl"] { color: #ff0000 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
     div.stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #1c2d5a !important; border-color: #38bdf8 !important; box-shadow: 0px 0px 10px rgba(56, 189, 248, 0.4) !important; }
 
-    /* STRATEGIES CUSTOM NEON LABELS */
     .neon-green-lbl { color: #00ff00 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(0,255,0,0.6); display: inline-block; }
     .neon-red-lbl { color: #ff0000 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(255,0,0,0.6); display: inline-block; }
     
@@ -180,7 +168,6 @@ def get_server_ip():
 
 SERVER_IP = get_server_ip()
 
-# Automated background logger syncs with local Indian Standard Time (IST) zone
 def add_log(msg, type_icon="🚀"):
     import datetime
     ist_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
@@ -257,7 +244,7 @@ def fetch_candles_df(symbol, timeframe, limit=200):
     except: return None
 
 # =====================================================
-# BACKGROUND TRADE ENGINE THREAD
+# BACKGROUND TRADE ENGINE THREAD (ANTI-IDLE SAFE LOOP)
 # =====================================================
 def core_execution_engine(shared_mem):
     while True:
@@ -383,14 +370,13 @@ def core_execution_engine(shared_mem):
                                 opposite_side = "sell" if side == "buy" else "buy"
                                 t1_qty = int(u_qty * 0.50)  
                                 t2_qty = int(u_qty * 0.25)  
-                                t3_qty = u_qty - (t1_qty + t2_qty)  
                                 
                                 if t1_qty > 0: place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
                                 if t2_qty > 0: place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
                                 
                                 place_stop_loss(sym, t1_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
                                 place_stop_loss(sym, t2_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                                place_stop_loss(sym, t3_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                                place_stop_loss(sym, (u_qty - t1_qty - t2_qty), opposite_side, sl, u_db['api_key'], u_db['api_secret'])
                                 
                                 if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
                                 shared_mem.active_trades[sym][user] = {
@@ -407,7 +393,7 @@ if "thread_started" not in st.session_state:
     st.session_state["thread_started"] = True
 
 # =====================================================
-# RENDER LAYOUT (Only Pure Numeric Values In RSI Tabs)
+# RENDER LAYOUT
 # =====================================================
 st.markdown(f"""
 <div class="quantum-header-box">
@@ -419,7 +405,6 @@ st.markdown(f"""
 col_btc_w, col_eth_w = st.columns(2)
 with col_btc_w:
     btc_info = mem.last_triggered_setup_info["BTCUSD"]
-    # 📋 UPDATED: Text fields removed, only heavy bold raw dynamic values are printed inside tabs
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-orange">●</span><span class="ticker-token-title">BTCUSD Future Live</span></div>
@@ -456,7 +441,6 @@ with col_btc_w:
 
 with col_eth_w:
     eth_info = mem.last_triggered_setup_info["ETHUSD"]
-    # 📋 UPDATED: Text fields removed, only heavy bold raw dynamic values are printed inside tabs
     st.markdown(f"""
     <div class="ticker-widget-card">
         <div><span class="ticker-dot-purple">●</span><span class="ticker-token-title">ETHUSD Future Live</span></div>
@@ -515,22 +499,18 @@ with col_body_r:
     st.markdown('<div class="grid-panel" style="min-height: 250px;">', unsafe_allow_html=True)
     st.markdown('<div class="panel-heading">⚙️ QUAD-STRATEGY PIPELINE SWITCHES</div>', unsafe_allow_html=True)
     
-    # 1. 5-STAR LONG (Neon Chamkila Green)
     cl1, cl2 = st.columns([0.1, 0.9])
     with cl1: mem.strategy_switches["5-STAR LONG"] = st.checkbox("", value=mem.strategy_switches["5-STAR LONG"], key="chk_5_long")
     with cl2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">1. RSI 5-STAR LONG</span>', unsafe_allow_html=True)
         
-    # 2. 5-STAR SHORT (Neon Chamkila Red)
     cs1, cs2 = st.columns([0.1, 0.9])
     with cs1: mem.strategy_switches["5-STAR SHORT"] = st.checkbox("", value=mem.strategy_switches["5-STAR SHORT"], key="chk_5_short")
     with cs2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">2. RSI 5-STAR SHORT</span>', unsafe_allow_html=True)
         
-    # 3. 5-STAR BB BUY (Neon Chamkila Green)
     cb1, cb2 = st.columns([0.1, 0.9])
     with cb1: mem.strategy_switches["5-STAR BB BUY"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB BUY"], key="chk_bb_buy")
     with cb2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">3. BOLLINGER BUY BREAKOUT</span>', unsafe_allow_html=True)
         
-    # 4. 5-STAR BB SELL (Neon Chamkila Red)
     cx1, cx2 = st.columns([0.1, 0.9])
     with cx1: mem.strategy_switches["5-STAR BB SELL"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB SELL"], key="chk_bb_sell")
     with cx2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">4. BOLLINGER SELL BREAKOUT</span>', unsafe_allow_html=True)
@@ -583,7 +563,7 @@ if user_has_keys:
             mem.users_db[active_user]["eth_qty"] = new_eth
             if active_user in all_u:
                 all_u[active_user]["btc_qty"] = new_btc
-                all_u[active_user]["eth_qty"] = new_eth
+                all_u[active_u]["eth_qty"] = new_eth
                 save_users(all_u)
             add_log(f"Quantity sync complete.")
             st.rerun()
@@ -624,5 +604,6 @@ if st.button("🔴 LOGOUT TERMINAL SESSION", use_container_width=True):
     st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
 
+# ✅ FORCE AUTOMATIC CORE AGGRESSIVE TICK REFRESH TO KEEP LOOP RUNNING CONTINUOUSLY
 time.sleep(1)
 st.rerun()
