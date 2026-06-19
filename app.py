@@ -145,8 +145,6 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important; 
     }
     
-    div.stButton > button[key="btn_start_runner_ctrl"] { color: #00ff00 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(0,255,0,0.5); }
-    div.stButton > button[key="btn_stop_scanner_ctrl"] { color: #ff0000 !important; font-weight: 900 !important; text-shadow: 0px 0px 5px rgba(255,0,0,0.5); }
     div.stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #1c2d5a !important; border-color: #38bdf8 !important; box-shadow: 0px 0px 10px rgba(56, 189, 248, 0.4) !important; }
 
     .neon-green-lbl { color: #00ff00 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(0,255,0,0.6); display: inline-block; }
@@ -244,7 +242,7 @@ def fetch_candles_df(symbol, timeframe, limit=200):
     except: return None
 
 # =====================================================
-# BACKGROUND TRADE ENGINE THREAD (ANTI-IDLE SAFE LOOP)
+# BACKGROUND TRADE ENGINE THREAD
 # =====================================================
 def core_execution_engine(shared_mem):
     while True:
@@ -393,6 +391,19 @@ if "thread_started" not in st.session_state:
     st.session_state["thread_started"] = True
 
 # =====================================================
+# CALLBACK STATE CONTROL BUTTONS
+# =====================================================
+def trigger_stop_action():
+    mem.global_engine_running = False
+    add_log("Algorithmic System SCANNER Completely Stopped.", type_icon="🔴")
+    st.rerun()
+
+def trigger_start_action():
+    mem.global_engine_running = True
+    add_log("Algorithmic System RUNNER Activated.", type_icon="🟢")
+    st.rerun()
+
+# =====================================================
 # RENDER LAYOUT
 # =====================================================
 st.markdown(f"""
@@ -485,14 +496,11 @@ with col_body_l:
     engine_status_label = "🟩 ACTIVE (RUNNING)" if mem.global_engine_running else "🟫 DEACTIVATED (PAUSED)"
     st.markdown(f"<div style='font-size:12px; margin-bottom:10px; color:#ffff00;'>CURRENT STATUS: <b style='color:#38bdf8;'>{engine_status_label}</b></div>", unsafe_allow_html=True)
     
-    if st.button("🟢 START RUNNER", key="btn_start_runner_ctrl", use_container_width=True):
-        mem.global_engine_running = True
-        add_log("Algorithmic System RUNNER Activated.", type_icon="🟢")
-        st.rerun()
-    if st.button("🔴 STOP SCANNER", key="btn_stop_scanner_ctrl", use_container_width=True):
-        mem.global_engine_running = False
-        add_log("Algorithmic System SCANNER Completely Stopped.", type_icon="🔴")
-        st.rerun()
+    # ✅ FIX: Native callbacks to guarantee instant re-rendering on Streamlit Cloud
+    if mem.global_engine_running:
+        st.button("🔴 STOP SCANNER", on_click=trigger_stop_action, use_container_width=True)
+    else:
+        st.button("🟢 START RUNNER", on_click=trigger_start_action, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col_body_r:
@@ -563,7 +571,7 @@ if user_has_keys:
             mem.users_db[active_user]["eth_qty"] = new_eth
             if active_user in all_u:
                 all_u[active_user]["btc_qty"] = new_btc
-                all_u[active_u]["eth_qty"] = new_eth
+                all_u[active_user]["eth_qty"] = new_eth
                 save_users(all_u)
             add_log(f"Quantity sync complete.")
             st.rerun()
@@ -604,6 +612,6 @@ if st.button("🔴 LOGOUT TERMINAL SESSION", use_container_width=True):
     st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ✅ FORCE AUTOMATIC CORE AGGRESSIVE TICK REFRESH TO KEEP LOOP RUNNING CONTINUOUSLY
+# Live dynamic engine page refresh handler
 time.sleep(1)
 st.rerun()
