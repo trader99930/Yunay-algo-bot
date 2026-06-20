@@ -1,0 +1,9 @@
+{
+    "Sushil": {
+        "password": "yunu",
+        "api_key": "d2KmwWf7VCyowbwNwDc3So26Bwjbs0",
+        "api_secret": "streamlit run app.py --server.headless true",
+        "btc_qty": 4,
+        "eth_qty": 4
+    }
+}

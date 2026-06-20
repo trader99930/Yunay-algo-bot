@@ -1,0 +1,16 @@
+{
+    "Yunu": {
+        "password": "yunu",
+        "api_key": "d2KmwWf7VCyowbwNwDc3So26Bwjbs0",
+        "api_secret": "q2Oz3B6L2J7MrrkYJXsZkE6sLXPpAz2t7dCD55v1ke11wEtTI72j0EqdcsXI",
+        "btc_qty": 4,
+        "eth_qty": 4
+    },
+    "Sushil": {
+        "password": "yunu",
+        "api_key": "d2KmwWf7VCyowbwNwDc3So26Bwjbs0",
+        "api_secret": "q2Oz3B6L2J7MrrkYJXsZkE6sLXPpAz2t7dCD55v1ke11wEtTI72j0EqdcsXI",
+        "btc_qty": 4,
+        "eth_qty": 4
+    }
+}

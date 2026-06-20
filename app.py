@@ -3,6 +3,7 @@ import hmac
 import json
 import time
 import threading
+import datetime
 import numpy as np
 import pandas as pd
 import requests
@@ -24,9 +25,13 @@ class GlobalEngineMemory:
     def __init__(self):
         self.users_db = {}
         self.global_engine_running = True
-        self.active_trades = {}
+        self.active_trades = {"BTCUSD": {}, "ETHUSD": {}} 
         self.ordered_candles = {}
         self.is_processing = False
+        
+        # --- RMS & PERSISTENT LOSS TRACKING ---
+        self.daily_pnl_tracker = {}
+        self.max_daily_loss_limit = 50.0
         
         self.last_triggered_setup_info = {
             "BTCUSD": {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0},
@@ -42,7 +47,7 @@ class GlobalEngineMemory:
             "5-STAR BB BUY": {"triggers": 0}, "5-STAR BB SELL": {"triggers": 0}
         }
         self.last_terminal_logs = [
-            "<div><span style='color: #38bdf8;'>[SYSTEM]</span> 🚀 Advance Controller Engine Activated.</div>"
+            "<div><span style='color: #38bdf8;'>[SYSTEM]</span> 🚀 Advance Controller Engine Activated with Live RSI Synchronization.</div>"
         ]
         self.ticker_feeds = {
             "BTCUSD": {"ltp": 0.0, "rsi_1m": 0.0, "rsi_5m": 0.0, "rsi_15m": 0.0}, 
@@ -57,11 +62,22 @@ if "mem_instance" not in st.session_state:
 mem = st.session_state["mem_instance"]
 
 # --- 🔐 RELOAD PERSISTENCE ANCHOR ---
+all_users_list = load_users()
+
+for usr, data in all_users_list.items():
+    if usr not in mem.users_db:
+        mem.users_db[usr] = {
+            "api_key": data.get("api_key", ""),
+            "api_secret": data.get("api_secret", ""),
+            "btc_qty": data.get("btc_qty", 4),
+            "eth_qty": data.get("eth_qty", 4),
+            "active": True
+        }
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = True  
 
 if "current_user" not in st.session_state or not st.session_state["current_user"]:
-    all_users_list = load_users()
     if all_users_list:
         st.session_state["current_user"] = list(all_users_list.keys())[0]
     else:
@@ -72,18 +88,6 @@ if not st.session_state.get("logged_in", False):
         st.stop()
 
 current_usr = st.session_state.get("current_user", "Master_Trader")
-if current_usr not in mem.users_db:
-    all_u = load_users()
-    if current_usr in all_u and all_u[current_usr].get("api_key"):
-        mem.users_db[current_usr] = {
-            "api_key": all_u[current_usr]["api_key"],
-            "api_secret": all_u[current_usr]["api_secret"],
-            "btc_qty": all_u[current_usr].get("btc_qty", 4),
-            "eth_qty": all_u[current_usr].get("eth_qty", 4),
-            "active": True
-        }
-    else:
-        mem.users_db[current_usr] = {"api_key": "", "api_secret": "", "btc_qty": 4, "eth_qty": 4, "active": True}
 
 # =====================================================
 # MASTER MULTI-COLOR NEON GLOW CUSTOM CSS
@@ -124,15 +128,10 @@ st.markdown("""
     .signal-metric { color: #38bdf8 !important; font-weight: bold !important; }
     .signal-value-active { color: #10b981; font-weight: bold; }
     .signal-value-waiting { color: #e2e8f0 !important; font-weight: 500 !important; font-size: 11.5px !important; }
-
-    .terminal-table { width: 100%; border-collapse: collapse; font-size: 12px; color: #ffff00 !important; }
-    .terminal-table th { color: #38bdf8 !important; text-align: left; padding: 10px 6px; border-bottom: 2px solid #1e3a8a; font-weight: bold !important; }
-    .terminal-table td { padding: 12px 6px; border-bottom: 1px solid #1e3a8a; color: #ffff00 !important; font-weight: bold !important; }
     
     .diagnostic-logger-container { background-color: #060913 !important; border: 1px solid #1e3a8a !important; padding: 15px; border-radius: 6px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.8; color: #ffff00 !important; }
     
     input { background-color: #0d1b3e !important; color: #ffffff !important; font-weight: bold !important; border: 2px solid #1e3a8a !important; border-radius: 4px; padding: 8px; }
-    div[data-testid="stVerticalBlock"] > div { background-color: transparent !important; border: none !important; padding: 0 !important; }
     
     div.stButton > button, div[data-testid="stForm"] button, .stFormSubmitButton button { 
         background-color: #07090e !important; 
@@ -141,7 +140,8 @@ st.markdown("""
         font-size: 12px !important; 
         font-weight: bold !important; 
         text-transform: uppercase !important; 
-        padding: 6px 16px !important; 
+        padding: 10px 16px !important; 
+        width: 100% !important;
         transition: all 0.2s ease-in-out !important; 
     }
     
@@ -149,11 +149,11 @@ st.markdown("""
 
     .neon-green-lbl { color: #00ff00 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(0,255,0,0.6); display: inline-block; }
     .neon-red-lbl { color: #ff0000 !important; font-weight: bold !important; font-size: 14px !important; text-shadow: 0px 0px 6px rgba(255,0,0,0.6); display: inline-block; }
-    
-    div[data-testid="stColumn"] { display: flex; align-items: center !important; }
-    div[data-testid="stCheckbox"] label { margin-bottom: 0px !important; padding-top: 5px !important; }
 
     .stWidgetFormLabel, div[data-testid="stMarkdownContainer"] p, label { color: #ffff00 !important; font-weight: bold !important; }
+    
+    .client-row-header { color: #38bdf8 !important; font-size: 12px; font-weight: bold; border-bottom: 1px solid #1e3a8a; padding-bottom: 4px; margin-bottom: 8px; }
+    .client-row-data { font-size: 13px; margin-bottom: 6px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -165,15 +165,6 @@ def get_server_ip():
     except: return "152.58.109.90"
 
 SERVER_IP = get_server_ip()
-
-def add_log(msg, type_icon="🚀"):
-    import datetime
-    ist_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
-    timestamp = ist_time.strftime("%H:%M:%S")
-    
-    full_msg = f"<div><span style='color: #38bdf8;'>[{timestamp}]</span> {type_icon} <span style='color:#ffff00; font-weight:bold;'>{msg}</span></div>"
-    mem.last_terminal_logs.insert(0, full_msg)
-    if len(mem.last_terminal_logs) > 20: mem.last_terminal_logs.pop()
 
 # =====================================================
 # DELTA INDIA API CONNECTORS
@@ -221,13 +212,41 @@ def get_open_position_qty(symbol, api_key, api_secret):
         return 0
     except: return 0
 
+def force_close_all_orders_and_positions(api_key, api_secret):
+    try:
+        send_signed_request("DELETE", "/v2/orders/all", api_key, api_secret, {})
+        res = send_signed_request("GET", "/v2/positions/margined", api_key, api_secret)
+        if res and "result" in res:
+            for pos in res["result"]:
+                sz = abs(int(pos.get("size", 0)))
+                if sz > 0:
+                    sym = pos.get("product_symbol")
+                    side = pos.get("side")
+                    rev_side = "sell" if side == "buy" else "buy"
+                    send_signed_request("POST", "/v2/orders", api_key, api_secret, {
+                        "product_symbol": sym, "size": sz, "side": rev_side, "order_type": "market_order"
+                    })
+        return True
+    except:
+        return False
+
+def add_log(msg, type_icon="🚀"):
+    import datetime
+    ist_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
+    timestamp = ist_time.strftime("%H:%M:%S")
+    full_msg = f"<div><span style='color: #38bdf8;'>[{timestamp}]</span> {type_icon} <span style='color:#ffff00; font-weight:bold;'>{msg}</span></div>"
+    mem.last_terminal_logs.insert(0, full_msg)
+    if len(mem.last_terminal_logs) > 20: mem.last_terminal_logs.pop()
+
+# ✅ ACCURATE EM-WEIGHTED RSI FOR CRYPTO CANDLES
 def rsi_calc(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
-    return 100 - (100 / (1 + (avg_gain / (avg_loss + 1e-10))))
+    avg_gain = gain.ewm(com=period-1, adjust=False).mean()
+    avg_loss = loss.ewm(com=period-1, adjust=False).mean()
+    rs = avg_gain / (avg_loss + 1e-10)
+    return 100 - (100 / (1 + rs))
 
 def fetch_candles_df(symbol, timeframe, limit=200):
     try:
@@ -235,156 +254,223 @@ def fetch_candles_df(symbol, timeframe, limit=200):
         multiplier_seconds = 60 if timeframe == "1m" else (300 if timeframe == "5m" else 900)
         r = requests.get(f"{BASE_URL}/v2/history/candles", params={"symbol": symbol, "resolution": timeframe, "start": end_t - (limit * multiplier_seconds), "end": end_t}, timeout=10).json()
         if "result" in r and r["result"]:
-            df = pd.DataFrame(r["result"]).iloc[::-1].reset_index(drop=True)
+            df = pd.DataFrame(r["result"])
+            df["time"] = pd.to_numeric(df["time"])
+            df = df.sort_values(by="time", ascending=True).reset_index(drop=True)
             for col in ["close", "high", "low"]: df[col] = pd.to_numeric(df[col])
             return df
         return None
     except: return None
 
 # =====================================================
-# BACKGROUND TRADE ENGINE THREAD
+# BACKGROUND TRADE ENGINE THREAD WITH LIVE TRACKING & SL/TG TRIGGERS
 # =====================================================
 def core_execution_engine(shared_mem):
     while True:
-        if not shared_mem.global_engine_running:
-            time.sleep(1)
-            continue
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        
+        # --- FORCED USER-BY-USER REALTIME DIRECT DELTA ACCOUNT SCRAPER ---
+        try:
+            for user, u_db in list(shared_mem.users_db.items()):
+                if not u_db.get('api_key') or not u_db.get('api_secret'): continue
+                res = send_signed_request("GET", "/v2/positions/margined", u_db['api_key'], u_db['api_secret'])
+                if res and "result" in res:
+                    active_symbols_this_run = []
+                    for pos in res["result"]:
+                        sym = pos.get("product_symbol", "")
+                        if sym in ["BTCUSD", "ETHUSD"]:
+                            sz = abs(int(pos.get("size", 0)))
+                            if sz > 0:
+                                active_symbols_this_run.append(sym)
+                                side = pos.get("side", "buy").lower()
+                                entry_p = float(pos.get("entry_price", shared_mem.ticker_feeds[sym]["ltp"]))
+                                
+                                # Instantly force-pull historical/pre-existing position matching user account bounds
+                                if user not in shared_mem.active_trades[sym]:
+                                    shared_mem.active_trades[sym][user] = {
+                                        'side': side, 'entry_price': entry_p, 'sl': entry_p * 0.95 if side == 'buy' else entry_p * 1.05, 
+                                        't1': entry_p * 1.02, 't2': entry_p * 1.04, 'current_stage': 0, 
+                                        'qty': sz, 'initial_qty': sz, 'live_pnl': 0.0, 'is_external': True
+                                    }
+                                else:
+                                    shared_mem.active_trades[sym][user]['qty'] = sz
+                    
+                    # Clear locally stored data if position squared off outside bounds
+                    for sym in ["BTCUSD", "ETHUSD"]:
+                        if user in shared_mem.active_trades[sym] and sym not in active_symbols_this_run:
+                            calc_pnl = shared_mem.active_trades[sym][user].get('live_pnl', 0.0)
+                            if user not in shared_mem.daily_pnl_tracker:
+                                shared_mem.daily_pnl_tracker[user] = {"realized": 0.0, "date": today_str, "blocked": False}
+                            shared_mem.daily_pnl_tracker[user]["realized"] += calc_pnl
+                            del shared_mem.active_trades[sym][user]
+        except: pass
+
+        # Process market metrics updates
         try:
             symbols = ["BTCUSD", "ETHUSD"]
             for sym in symbols:
-                try:
-                    r = requests.get(f"{BASE_URL}/v2/tickers/{sym}", timeout=4).json()
-                    if r and "result" in r: shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
-                except: pass
+                r = requests.get(f"{BASE_URL}/v2/tickers/{sym}", timeout=4).json()
+                if r and "result" in r: 
+                    shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
+        except: pass
 
-            for sym in symbols:
-                live_price = shared_mem.ticker_feeds[sym]["ltp"]
-                if not live_price or sym not in shared_mem.active_trades: continue
-                
-                for user in list(shared_mem.active_trades[sym].keys()):
-                    trade = shared_mem.active_trades[sym][user]
-                    u_db = shared_mem.users_db.get(user)
-                    if not u_db or not u_db.get('api_key'): continue
-                    
-                    ex_qty = get_open_position_qty(sym, u_db['api_key'], u_db['api_secret'])
-                    mult = 1 if trade['side'] == 'buy' else -1
-                    calc_pnl = round((live_price - trade['entry_price']) * mult * trade['qty'], 2)
-                    trade['live_pnl'] = calc_pnl
-                    shared_mem.last_triggered_setup_info[sym]["live_pnl"] = calc_pnl
-                    
-                    if ex_qty == 0 or (trade['side'] == 'buy' and live_price <= trade['sl']) or (trade['side'] == 'sell' and live_price >= trade['sl']):
-                        del shared_mem.active_trades[sym][user]
-                        shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                        add_log(f"Position closed safely for {user} on {sym}", type_icon="🛑")
-                        continue
-                    
-                    if trade['current_stage'] == 0 and ex_qty <= int(trade['initial_qty'] * 0.55):
-                        trade['sl'] = trade['entry_price']  
+        # --- LIVE TERMINAL SL TRAILING & TARGET LIFECYCLE CONTROLLER ---
+        for sym in ["BTCUSD", "ETHUSD"]:
+            live_price = shared_mem.ticker_feeds[sym]["ltp"]
+            if not live_price or sym not in shared_mem.active_trades: continue
+            
+            for user in list(shared_mem.active_trades[sym].keys()):
+                trade = shared_mem.active_trades[sym][user]
+                u_db = shared_mem.users_db.get(user, {})
+                if not u_db.get("api_key"): continue
+
+                mult = 1 if trade['side'] == 'buy' else -1
+                trade['live_pnl'] = round((live_price - trade['entry_price']) * mult * trade['qty'], 2)
+                is_buy = (trade['side'] == 'buy')
+
+                # 1. LIVE STOP LOSS TRIGGER DETECTOR
+                if (is_buy and live_price <= trade['sl']) or (not is_buy and live_price >= trade['sl']):
+                    add_log(f"💥 SL HIT for {user} on {sym} @ ${live_price:,.2f} (Cleared Qty: {trade['qty']})", type_icon="❌")
+                    force_close_all_orders_and_positions(u_db['api_key'], u_db['api_secret'])
+                    continue
+
+                # 2. LIVE TARGET 1 HIT -> BOOK 50% & TRAIL SL TO COST
+                if trade['current_stage'] == 0:
+                    if (is_buy and live_price >= trade['t1']) or (not is_buy and live_price <= trade['t1']):
                         trade['current_stage'] = 1
-                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['entry_price']} (Cost)"
-                        add_log(f"🎯 Target 1 Hit! 50% Qty Booked. SL Trailed to Cost for {user}", type_icon="💰")
-                    
-                    if trade['current_stage'] == 1 and ex_qty <= int(trade['initial_qty'] * 0.28):
-                        trade['sl'] = trade['t1']  
-                        trade['current_stage'] = 2
-                        shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['t1']} (T1 Protected)"
-                        add_log(f"🎯 Target 2 Hit! 25% Qty Booked. SL Trailed to T1 for {user}", type_icon="🚀")
-
-            if shared_mem.users_db and not shared_mem.is_processing:
-                for sym in symbols:
-                    if sym in shared_mem.active_trades and len(shared_mem.active_trades[sym]) > 0: continue
-                    first_user = list(shared_mem.users_db.keys())[0]
-                    if not shared_mem.users_db[first_user].get('api_key'): continue
-                    
-                    exchange_live_qty = get_open_position_qty(sym, shared_mem.users_db[first_user]['api_key'], shared_mem.users_db[first_user]['api_secret'])
-                    if exchange_live_qty > 0: continue
-
-                    df_15m = fetch_candles_df(sym, "15m", limit=200)
-                    df_5m = fetch_candles_df(sym, "5m", limit=200)
-                    df_1m = fetch_candles_df(sym, "1m", limit=200)
-                    if df_15m is None or df_5m is None or df_1m is None: continue
-                    
-                    df_15m["RSI"] = rsi_calc(df_15m["close"])
-                    df_5m["RSI"] = rsi_calc(df_5m["close"])
-                    df_1m["RSI"] = rsi_calc(df_1m["close"])
-                    
-                    ma = df_1m["close"].rolling(20).mean()
-                    stdev = df_1m["close"].rolling(20).std()
-                    df_1m["BB_up"], df_1m["BB_low"] = ma + (2 * stdev), ma - (2 * stdev)
-                    
-                    shared_mem.ticker_feeds[sym]["rsi_1m"] = round(df_1m["RSI"].iloc[-1], 2)
-                    shared_mem.ticker_feeds[sym]["rsi_5m"] = round(df_5m["RSI"].iloc[-1], 2)
-                    shared_mem.ticker_feeds[sym]["rsi_15m"] = round(df_15m["RSI"].iloc[-1], 2)
-                    
-                    rsi_15, rsi_5, rsi_1, rsi_1_prev = df_15m["RSI"].iloc[-2], df_5m["RSI"].iloc[-2], df_1m["RSI"].iloc[-2], df_1m["RSI"].iloc[-3]
-                    close_1m = df_1m["close"].iloc[-2]
-                    c_time = df_1m["time"].iloc[-2]
-                    
-                    if sym in shared_mem.ordered_candles and shared_mem.ordered_candles[sym] == c_time: continue
-                    triggered, s_key, side, entry, sl, t1, t2 = False, "", "", 0.0, 0.0, 0.0, 0.0
-                    
-                    if shared_mem.strategy_switches["5-STAR LONG"] and rsi_15 >= 60 and rsi_5 >= 60 and rsi_1 > 40 and rsi_1 > rsi_1_prev and (43 >= rsi_1_prev >= 20):
-                        triggered, s_key, side = True, "5-STAR LONG", "buy"
-                        entry = round(float(df_1m["high"].iloc[-2]), 2)
-                        sl = round(float(df_1m["low"].iloc[-16:-1].min()), 2)
-                        risk = entry - sl
-                        t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
-                    
-                    elif shared_mem.strategy_switches["5-STAR SHORT"] and rsi_15 <= 40 and rsi_5 <= 40 and rsi_1 < 60 and rsi_1 < rsi_1_prev and (80 >= rsi_1_prev >= 57):
-                        triggered, s_key, side = True, "5-STAR SHORT", "sell"
-                        entry = round(float(df_1m["low"].iloc[-2]), 2)
-                        sl = round(float(df_1m["high"].iloc[-16:-1].max()), 2)
-                        risk = sl - entry
-                        t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
-                    
-                    elif shared_mem.strategy_switches["5-STAR BB BUY"] and rsi_15 > 60 and rsi_5 > 60 and rsi_1_prev < 61 and rsi_1 >= 60 and close_1m > df_1m["BB_up"].iloc[-2]:
-                        triggered, s_key, side = True, "5-STAR BB BUY", "buy"
-                        entry, sl = round(float(df_1m["high"].iloc[-2]), 2), round(float(df_1m["low"].iloc[-2]), 2)
-                        risk = entry - sl
-                        t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
-                    
-                    elif shared_mem.strategy_switches["5-STAR BB SELL"] and rsi_15 < 40 and rsi_5 < 40 and rsi_1_prev > 39 and rsi_1 <= 40 and close_1m < df_1m["BB_low"].iloc[-2]:
-                        triggered, s_key, side = True, "5-STAR BB SELL", "sell"
-                        entry, sl = round(float(df_1m["low"].iloc[-2]), 2), round(float(df_1m["high"].iloc[-2]), 2)
-                        risk = sl - entry
-                        t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
-
-                    if triggered and risk > 0:
-                        shared_mem.is_processing = True
-                        shared_mem.ordered_candles[sym] = c_time
-                        shared_mem.strategy_metrics[s_key]["triggers"] += 1
-                        add_log(f"{s_key} Triggered on {sym}!", type_icon="⚡")
+                        old_qty = trade['qty']
+                        booked_qty = int(old_qty * 0.50)
                         
-                        shared_mem.last_triggered_setup_info[sym] = {
-                            "entry": f"${entry:,.2f}", "sl": f"${sl:,.2f}", "t1": f"${t1:,.2f}", "t2": f"${t2:,.2f}", "status": f"{s_key} ({side.upper()})", "live_pnl": 0.0
-                        }
-                        
-                        for user, u_db in shared_mem.users_db.items():
-                            u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
-                            if not u_db.get("api_key"): continue
+                        if booked_qty > 0:
+                            opposite_side = "sell" if is_buy else "buy"
+                            # Execute Market Order for Partial Booking
+                            send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {
+                                "product_symbol": sym, "size": booked_qty, "side": opposite_side, "order_type": "market_order"
+                            })
+                            # Cancel pre-existing bracket orders to refresh structures
+                            send_signed_request("DELETE", "/v2/orders/all", u_db['api_key'], u_db['api_secret'], {})
                             
-                            res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": u_qty, "side": side, "order_type": "market_order"} )
-                            if res and res.get("success") is True:
-                                opposite_side = "sell" if side == "buy" else "buy"
-                                t1_qty = int(u_qty * 0.50)  
-                                t2_qty = int(u_qty * 0.25)  
-                                
-                                if t1_qty > 0: place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
-                                if t2_qty > 0: place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
-                                
-                                place_stop_loss(sym, t1_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                                place_stop_loss(sym, t2_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                                place_stop_loss(sym, (u_qty - t1_qty - t2_qty), opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                                
-                                if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
-                                shared_mem.active_trades[sym][user] = {
-                                    'side': side, 'entry_price': entry, 'sl': sl, 't1': t1, 't2': t2,
-                                    'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0
-                                }
-                        break
-            shared_mem.is_processing = False
+                            # Recalculate remaining pool sizes
+                            rem_qty = old_qty - booked_qty
+                            trade['qty'] = rem_qty
+                            trade['sl'] = trade['entry_price'] # Trail Remaining to Cost Engine
+                            
+                            if rem_qty > 0:
+                                place_stop_loss(sym, rem_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
+                                place_target_order(sym, rem_qty, opposite_side, trade['t2'], u_db['api_key'], u_db['api_secret'])
+                            
+                            add_log(f"🎯 T1 TRIGGERED for {user} ({sym})! Booked Qty: {booked_qty} @ ${live_price:,.2f} | Remaining Qty: {rem_qty} Trailed to Cost: ${trade['sl']:,.2f}", type_icon="🛡️")
+
+                # 3. LIVE TARGET 2 HIT -> FULL CLOSURE
+                if trade['current_stage'] == 1:
+                    if (is_buy and live_price >= trade['t2']) or (not is_buy and live_price <= trade['t2']):
+                        add_log(f"🚀 T2 MAX TARGET ACHIEVED for {user} on {sym}! Squared Off Remaining Qty: {trade['qty']} @ ${live_price:,.2f}", type_icon="💰")
+                        force_close_all_orders_and_positions(u_db['api_key'], u_db['api_secret'])
+
+        if not shared_mem.global_engine_running:
             time.sleep(1)
-        except: time.sleep(1)
+            continue
+
+        if shared_mem.users_db and not shared_mem.is_processing:
+            for sym in ["BTCUSD", "ETHUSD"]:
+                if sym in shared_mem.active_trades and len(shared_mem.active_trades[sym]) > 0: continue
+                first_user = list(shared_mem.users_db.keys())[0]
+                if not shared_mem.users_db[first_user].get('api_key'): continue
+                
+                exchange_live_qty = get_open_position_qty(sym, shared_mem.users_db[first_user]['api_key'], shared_mem.users_db[first_user]['api_secret'])
+                if exchange_live_qty > 0: continue
+
+                df_15m = fetch_candles_df(sym, "15m", limit=200)
+                df_5m = fetch_candles_df(sym, "5m", limit=200)
+                df_1m = fetch_candles_df(sym, "1m", limit=200)
+                if df_15m is None or df_5m is None or df_1m is None: continue
+                
+                df_15m["RSI"] = rsi_calc(df_15m["close"])
+                df_5m["RSI"] = rsi_calc(df_5m["close"])
+                df_1m["RSI"] = rsi_calc(df_1m["close"])
+                
+                ma = df_1m["close"].rolling(20).mean()
+                stdev = df_1m["close"].rolling(20).std()
+                df_1m["BB_up"], df_1m["BB_low"] = ma + (2 * stdev), ma - (2 * stdev)
+                
+                shared_mem.ticker_feeds[sym]["rsi_1m"] = round(df_1m["RSI"].iloc[-1], 2)
+                shared_mem.ticker_feeds[sym]["rsi_5m"] = round(df_5m["RSI"].iloc[-1], 2)
+                shared_mem.ticker_feeds[sym]["rsi_15m"] = round(df_15m["RSI"].iloc[-1], 2)
+                
+                rsi_15, rsi_5, rsi_1, rsi_1_prev = df_15m["RSI"].iloc[-1], df_5m["RSI"].iloc[-1], df_1m["RSI"].iloc[-1], df_1m["RSI"].iloc[-2]
+                close_1m = df_1m["close"].iloc[-1]
+                c_time = df_1m["time"].iloc[-1]
+                
+                if sym in shared_mem.ordered_candles and shared_mem.ordered_candles[sym] == c_time: continue
+                triggered, s_key, side, entry, sl, t1, t2 = False, "", "", 0.0, 0.0, 0.0, 0.0
+                
+                if shared_mem.strategy_switches["5-STAR LONG"] and rsi_15 >= 60 and rsi_5 >= 60 and rsi_1 > 40 and rsi_1 > rsi_1_prev and (43 >= rsi_1_prev >= 20):
+                    triggered, s_key, side = True, "5-STAR LONG", "buy"
+                    entry = round(float(df_1m["high"].iloc[-1]), 2)
+                    sl = round(float(df_1m["low"].iloc[-16:].min()), 2)
+                    risk = entry - sl
+                    t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
+                
+                elif shared_mem.strategy_switches["5-STAR SHORT"] and rsi_15 <= 40 and rsi_5 <= 40 and rsi_1 < 60 and rsi_1 < rsi_1_prev and (80 >= rsi_1_prev >= 57):
+                    triggered, s_key, side = True, "5-STAR SHORT", "sell"
+                    entry = round(float(df_1m["low"].iloc[-1]), 2)
+                    sl = round(float(df_1m["high"].iloc[-16:].max()), 2)
+                    risk = sl - entry
+                    t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
+                
+                elif shared_mem.strategy_switches["5-STAR BB BUY"] and rsi_15 > 60 and rsi_5 > 60 and rsi_1_prev < 61 and rsi_1 >= 60 and close_1m > df_1m["BB_up"].iloc[-1]:
+                    triggered, s_key, side = True, "5-STAR BB BUY", "buy"
+                    entry, sl = round(float(df_1m["high"].iloc[-1]), 2), round(float(df_1m["low"].iloc[-1]), 2)
+                    risk = entry - sl
+                    t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
+                
+                elif shared_mem.strategy_switches["5-STAR BB SELL"] and rsi_15 < 40 and rsi_5 < 40 and rsi_1_prev > 39 and rsi_1 <= 40 and close_1m < df_1m["BB_low"].iloc[-1]:
+                    triggered, s_key, side = True, "5-STAR BB SELL", "sell"
+                    entry, sl = round(float(df_1m["low"].iloc[-1]), 2), round(float(df_1m["high"].iloc[-1]), 2)
+                    risk = sl - entry
+                    t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
+
+                if triggered and risk > 0:
+                    shared_mem.is_processing = True
+                    shared_mem.ordered_candles[sym] = c_time
+                    shared_mem.strategy_metrics[s_key]["triggers"] += 1
+                    add_log(f"{s_key} Triggered on {sym}!", type_icon="⚡")
+                    
+                    shared_mem.last_triggered_setup_info[sym] = {
+                        "entry": f"${entry:,.2f}", "sl": f"${sl:,.2f}", "t1": f"${t1:,.2f}", "t2": f"${t2:,.2f}", "status": f"{s_key} ({side.upper()})", "live_pnl": 0.0
+                    }
+                    
+                    for user, u_db in shared_mem.users_db.items():
+                        if user not in shared_mem.daily_pnl_tracker or shared_mem.daily_pnl_tracker[user]["date"] != today_str:
+                            shared_mem.daily_pnl_tracker[user] = {"realized": 0.0, "date": today_str, "blocked": False}
+                        
+                        if shared_mem.daily_pnl_tracker[user]["blocked"]:
+                            continue
+                            
+                        u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
+                        if not u_db.get("api_key"): continue
+                        
+                        res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": u_qty, "side": side, "order_type": "market_order"} )
+                        if res and res.get("success") is True:
+                            opposite_side = "sell" if side == "buy" else "buy"
+                            t1_qty = int(u_qty * 0.50)  
+                            t2_qty = int(u_qty * 0.25)  
+                            
+                            if t1_qty > 0: place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
+                            if t2_qty > 0: place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
+                            
+                            place_stop_loss(sym, t1_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                            place_stop_loss(sym, t2_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                            place_stop_loss(sym, (u_qty - t1_qty - t2_qty), opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                            
+                            if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
+                            shared_mem.active_trades[sym][user] = {
+                                'side': side, 'entry_price': entry, 'sl': sl, 't1': t1, 't2': t2,
+                                'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0, 'is_external': False
+                            }
+                    break
+        shared_mem.is_processing = False
+        time.sleep(1)
 
 if "thread_started" not in st.session_state:
     threading.Thread(target=core_execution_engine, args=(mem,), daemon=True).start()
@@ -396,12 +482,20 @@ if "thread_started" not in st.session_state:
 def trigger_stop_action():
     mem.global_engine_running = False
     add_log("Algorithmic System SCANNER Completely Stopped.", type_icon="🔴")
-    st.rerun()
 
 def trigger_start_action():
     mem.global_engine_running = True
     add_log("Algorithmic System RUNNER Activated.", type_icon="🟢")
-    st.rerun()
+
+def trigger_global_kill_switch():
+    add_log("🚨 GLOBAL KILL SWITCH INITIATED! SQUARING OFF ALL ACCOUNTS...", type_icon="⚠️")
+    for user, u_db in mem.users_db.items():
+        if u_db.get("api_key") and u_db.get("api_secret"):
+            force_close_all_orders_and_positions(u_db["api_key"], u_db["api_secret"])
+                
+    mem.active_trades = {"BTCUSD": {}, "ETHUSD": {}}
+    mem.last_triggered_setup_info["BTCUSD"] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
+    mem.last_triggered_setup_info["ETHUSD"] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
 
 # =====================================================
 # RENDER LAYOUT
@@ -437,7 +531,7 @@ with col_btc_w:
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
-        <div class="live-pnl-text {pnl_class}">Net P&L: {'+' if pnl_val >= 0 else ''}${pnl_val:,.2f}</div>
+        <div class="live-pnl-text {pnl_class}">Global Setup P&L: {'+' if pnl_val >= 0 else ''}${pnl_val:,.2f}</div>
     </div>
     <div class="signal-data-box">
         <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {btc_info['status']}</div>
@@ -473,7 +567,7 @@ with col_eth_w:
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
-        <div class="live-pnl-text {pnl_class_eth}">Net P&L: {'+' if pnl_val_eth >= 0 else ''}${pnl_val_eth:,.2f}</div>
+        <div class="live-pnl-text {pnl_class_eth}">Global Setup P&L: {'+' if pnl_val_eth >= 0 else ''}${pnl_val_eth:,.2f}</div>
     </div>
     <div class="signal-data-box">
         <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {eth_info['status']}</div>
@@ -488,53 +582,212 @@ with col_eth_w:
 
 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
-col_body_l, col_body_r = st.columns(2)
-with col_body_l:
-    st.markdown('<div class="grid-panel" style="min-height: 250px;">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-heading">🎛️ ENGINE GLOBAL SWITCH SYSTEM</div>', unsafe_allow_html=True)
-    
-    engine_status_label = "🟩 ACTIVE (RUNNING)" if mem.global_engine_running else "🟫 DEACTIVATED (PAUSED)"
-    st.markdown(f"<div style='font-size:12px; margin-bottom:10px; color:#ffff00;'>CURRENT STATUS: <b style='color:#38bdf8;'>{engine_status_label}</b></div>", unsafe_allow_html=True)
-    
-    # ✅ FIX: Native callbacks to guarantee instant re-rendering on Streamlit Cloud
-    if mem.global_engine_running:
-        st.button("🔴 STOP SCANNER", on_click=trigger_stop_action, use_container_width=True)
-    else:
-        st.button("🟢 START RUNNER", on_click=trigger_start_action, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col_body_r:
-    st.markdown('<div class="grid-panel" style="min-height: 250px;">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-heading">⚙️ QUAD-STRATEGY PIPELINE SWITCHES</div>', unsafe_allow_html=True)
-    
-    cl1, cl2 = st.columns([0.1, 0.9])
-    with cl1: mem.strategy_switches["5-STAR LONG"] = st.checkbox("", value=mem.strategy_switches["5-STAR LONG"], key="chk_5_long")
-    with cl2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">1. RSI 5-STAR LONG</span>', unsafe_allow_html=True)
-        
-    cs1, cs2 = st.columns([0.1, 0.9])
-    with cs1: mem.strategy_switches["5-STAR SHORT"] = st.checkbox("", value=mem.strategy_switches["5-STAR SHORT"], key="chk_5_short")
-    with cs2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">2. RSI 5-STAR SHORT</span>', unsafe_allow_html=True)
-        
-    cb1, cb2 = st.columns([0.1, 0.9])
-    with cb1: mem.strategy_switches["5-STAR BB BUY"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB BUY"], key="chk_bb_buy")
-    with cb2: st.markdown('<span class="neon-green-lbl" style="line-height: 2.2;">3. BOLLINGER BUY BREAKOUT</span>', unsafe_allow_html=True)
-        
-    cx1, cx2 = st.columns([0.1, 0.9])
-    with cx1: mem.strategy_switches["5-STAR BB SELL"] = st.checkbox("", value=mem.strategy_switches["5-STAR BB SELL"], key="chk_bb_sell")
-    with cx2: st.markdown('<span class="neon-red-lbl" style="line-height: 2.2;">4. BOLLINGER SELL BREAKOUT</span>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
+# =====================================================
+# REAL-TIME CLIENT MATRIX DISPLAY (NATIVE ST.COLUMNS)
+# =====================================================
 st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
-st.markdown('<div class="panel-heading">📊 LIVE TERMINAL DIAGNOSTIC REPORT</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="diagnostic-logger-container">{"".join(mem.last_terminal_logs)}</div>', unsafe_allow_html=True)
+st.markdown('<div class="panel-heading">📈 REAL-TIME CLIENT MATRIX & RISK CONTROLLER</div>', unsafe_allow_html=True)
+
+hcol1, hcol2, hcol3, hcol4, hcol5 = st.columns([2, 2, 2, 2, 2])
+with hcol1: st.markdown('<div class="client-row-header">CLIENT NAME</div>', unsafe_allow_html=True)
+with hcol2: st.markdown('<div class="client-row-header">ENGINE STATUS</div>', unsafe_allow_html=True)
+with hcol3: st.markdown('<div class="client-row-header">LOT SIZING</div>', unsafe_allow_html=True)
+with hcol4: st.markdown('<div class="client-row-header">DAILY REALIZED</div>', unsafe_allow_html=True)
+with hcol5: st.markdown('<div class="client-row-header">TOTAL NET P&L</div>', unsafe_allow_html=True)
+
+has_records = False
+for u_name, u_config in mem.users_db.items():
+    if not u_config.get("api_key"): continue
+    has_records = True
+    
+    btc_pnl = mem.active_trades.get("BTCUSD", {}).get(u_name, {}).get("live_pnl", 0.0)
+    eth_pnl = mem.active_trades.get("ETHUSD", {}).get(u_name, {}).get("live_pnl", 0.0)
+    current_open_running_pnl = btc_pnl + eth_pnl
+    
+    today_stamp = datetime.date.today().strftime("%Y-%m-%d")
+    realized_day_pnl = mem.daily_pnl_tracker.get(u_name, {}).get("realized", 0.0) if mem.daily_pnl_tracker.get(u_name, {}).get("date") == today_stamp else 0.0
+    total_net_pnl = current_open_running_pnl + realized_day_pnl
+    
+    if mem.daily_pnl_tracker.get(u_name, {}).get("blocked", False):
+        status_txt = "🔴 RMS BLOCKED"
+    elif current_open_running_pnl != 0.0:
+        status_txt = "🟩 LIVE TRADING"
+    else:
+        status_txt = "🔵 SCANNING MESH"
+        
+    pnl_color = "#10b981" if total_net_pnl >= 0 else "#ef4444"
+    
+    rcol1, rcol2, rcol3, rcol4, rcol5 = st.columns([2, 2, 2, 2, 2])
+    with rcol1: st.markdown(f'<div class="client-row-data" style="color: #38bdf8;">{u_name}</div>', unsafe_allow_html=True)
+    with rcol2: st.markdown(f'<div class="client-row-data">{status_txt}</div>', unsafe_allow_html=True)
+    with rcol3: st.markdown(f'<div class="client-row-data">{u_config["btc_qty"]} BTC / {u_config["eth_qty"]} ETH</div>', unsafe_allow_html=True)
+    with rcol4: st.markdown(f'<div class="client-row-data">${realized_day_pnl:,.2f}</div>', unsafe_allow_html=True)
+    with rcol5: st.markdown(f'<div class="client-row-data" style="color: {pnl_color}; font-weight: bold;">${total_net_pnl:,.2f}</div>', unsafe_allow_html=True)
+
+if not has_records:
+    st.info("No Live Accounts Mounted in Terminal Memory Mesh")
+
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =====================================================
-# ONBOARD CREDENTIALS SYSTEM
+# 🚨 LIVE RUNNING POSITIONS MONITOR PANEL (STRICT USER ISOLATION SYNC)
 # =====================================================
 st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
-st.markdown('<div class="panel-heading">📁 MASTER ACCOUNT & DELTA API CONTROLLER</div>', unsafe_allow_html=True)
+st.markdown('<div class="panel-heading">🚨 LIVE RUNNING POSITIONS MONITOR (DELTA EXCHANGE)</div>', unsafe_allow_html=True)
+
+p_hcol1, p_hcol2, p_hcol3, p_hcol4, p_hcol5, p_hcol6 = st.columns([2, 1.5, 1.5, 2, 2, 3])
+with p_hcol1: st.markdown('<div class="client-row-header">USER</div>', unsafe_allow_html=True)
+with p_hcol2: st.markdown('<div class="client-row-header">SYMBOL</div>', unsafe_allow_html=True)
+with p_hcol3: st.markdown('<div class="client-row-header">SIDE</div>', unsafe_allow_html=True)
+with p_hcol4: st.markdown('<div class="client-row-header">QTY (LOTS)</div>', unsafe_allow_html=True)
+with p_hcol5: st.markdown('<div class="client-row-header">AVG ENTRY</div>', unsafe_allow_html=True)
+with p_hcol6: st.markdown('<div class="client-row-header">FLOATING P&L / SOURCE</div>', unsafe_allow_html=True)
+
+has_active_positions = False
+for sym in ["BTCUSD", "ETHUSD"]:
+    if sym in mem.active_trades:
+        for u_name in list(mem.users_db.keys()):
+            if u_name in mem.active_trades[sym]:
+                trade_details = mem.active_trades[sym][u_name]
+                has_active_positions = True
+                
+                side_color = "#00ff00" if trade_details['side'].lower() == "buy" else "#ff0000"
+                pnl_color = "#10b981" if trade_details['live_pnl'] >= 0 else "#ef4444"
+                source_lbl = "<span style='color:#a855f7;font-size:10px;'> [PRE-EXISTING ACTIVE]</span>" if trade_details.get('is_external') else "<span style='color:#38bdf8;font-size:10px;'> [ALGO INITIALIZED]</span>"
+                
+                p_rcol1, p_rcol2, p_rcol3, p_rcol4, p_rcol5, p_rcol6 = st.columns([2, 1.5, 1.5, 2, 2, 3])
+                with p_rcol1: st.markdown(f'<div class="client-row-data" style="color: #38bdf8;">{u_name}</div>', unsafe_allow_html=True)
+                with p_rcol2: st.markdown(f'<div class="client-row-data" style="color: #ffff00;">{sym}</div>', unsafe_allow_html=True)
+                with p_rcol3: st.markdown(f'<div class="client-row-data" style="color: {side_color}; font-weight: bold;">{trade_details["side"].upper()}</div>', unsafe_allow_html=True)
+                with p_rcol4: st.markdown(f'<div class="client-row-data">{trade_details["qty"]}</div>', unsafe_allow_html=True)
+                with p_rcol5: st.markdown(f'<div class="client-row-data">${trade_details["entry_price"]:,.2f}</div>', unsafe_allow_html=True)
+                with p_rcol6: st.markdown(f'<div class="client-row-data" style="color: {pnl_color}; font-weight: bold;">${trade_details["live_pnl"]:,.2f}{source_lbl}</div>', unsafe_allow_html=True)
+
+if not has_active_positions:
+    st.markdown('<div style="color: #a855f7; font-size: 12px; font-style: italic; padding: 5px 0;">No Active Open Positions detected across accounts.</div>', unsafe_allow_html=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# =====================================================
+# SYSTEM CORE CONTROL BUTTONS
+# =====================================================
+col_body_l, col_body_r = st.columns(2)
+with col_body_l:
+    st.markdown('<div class="grid-panel" style="min-height: 290px;">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-heading">🎛️ ENGINE GLOBAL SWITCH SYSTEM</div>', unsafe_allow_html=True)
+    
+    engine_status_label = "ACTIVE (RUNNING)" if mem.global_engine_running else "DEACTIVATED (PAUSED)"
+    st.subheader(f"STATUS: {engine_status_label}")
+    
+    if mem.global_engine_running:
+        if st.button("🔴 STOP SCANNER SYSTEM", key="btn_stop_sc"):
+            trigger_stop_action()
+            st.rerun()
+    else:
+        if st.button("🟢 START RUNNER SYSTEM", key="btn_start_sc"):
+            trigger_start_action()
+            st.rerun()
+        
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:11px; color:#ef4444; margin-bottom:5px;'>🚨 EMERGENCY OPERATIONS CONTROLLER:</div>", unsafe_allow_html=True)
+    if st.button("💥 GLOBAL KILL SWITCH (SQUARE OFF ALL)", key="btn_kill_glob"):
+        trigger_global_kill_switch()
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_body_r:
+    st.markdown('<div class="grid-panel" style="min-height: 290px;">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-heading">⚙️ QUAD-STRATEGY PIPELINE SWITCHES</div>', unsafe_allow_html=True)
+    
+    mem.strategy_switches["5-STAR LONG"] = st.checkbox("1. RSI 5-STAR LONG", value=mem.strategy_switches["5-STAR LONG"], key="chk_5_long")
+    mem.strategy_switches["5-STAR SHORT"] = st.checkbox("2. RSI 5-STAR SHORT", value=mem.strategy_switches["5-STAR SHORT"], key="chk_5_short")
+    mem.strategy_switches["5-STAR BB BUY"] = st.checkbox("3. BOLLINGER BUY BREAKOUT", value=mem.strategy_switches["5-STAR BB BUY"], key="chk_bb_buy")
+    mem.strategy_switches["5-STAR BB SELL"] = st.checkbox("4. BOLLINGER SELL BREAKOUT", value=mem.strategy_switches["5-STAR BB SELL"], key="chk_bb_sell")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Tabs
+tab_diag, tab_rms, tab_reg = st.tabs(["📊 LIVE DIAGNOSTICS LOGS", "🛡️ RISK CONTROLLER (RMS)", "👥 CLIENT REGISTRATION MATRIX"])
+
+with tab_diag:
+    st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-heading">📊 LIVE TERMINAL DIAGNOSTIC REPORT</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="diagnostic-logger-container">{"".join(mem.last_terminal_logs)}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with tab_rms:
+    st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-heading">🛡️ RMS MAX DAILY LOSS WINDOW CONFIGURATION</div>', unsafe_allow_html=True)
+    with st.form("RMS Form Configurator"):
+        max_loss_input = st.number_input("Global Max Daily Loss Limit Per Client ($ Limit)", min_value=1.0, max_value=5000.0, value=float(mem.max_daily_loss_limit))
+        save_rms_btn = st.form_submit_button("SAVE CONTROL LIMITS")
+        if save_rms_btn:
+            mem.max_daily_loss_limit = max_loss_input
+            add_log(f"Global RMS Matrix updated: Max daily loss lock set at ${max_loss_input}", type_icon="🛡️")
+            st.success("RMS Config parameters synchronized.")
+            st.rerun()
+            
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<span style='color: #38bdf8; font-size:12px;'>🔓 RESET BLOCKED RMS WINDOW CLIENTS:</span>", unsafe_allow_html=True)
+    blocked_accounts = [u for u, data in mem.daily_pnl_tracker.items() if data.get("blocked", False)]
+    if blocked_accounts:
+        target_reset_user = st.selectbox("Select Account to Unlock", options=blocked_accounts)
+        if st.button("UNLOCK ACCOUNT FOR TODAY"):
+            mem.daily_pnl_tracker[target_reset_user]["blocked"] = False
+            mem.daily_pnl_tracker[target_reset_user]["realized"] = 0.0
+            add_log(f"Unlocked account bounds for {target_reset_user}", type_icon="🔓")
+            st.rerun()
+    else:
+        st.info("No users currently blocked under RMS safety thresholds.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with tab_reg:
+    st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-heading">👥 SELF CLIENT DIRECT REGISTRATION MATRIX</div>', unsafe_allow_html=True)
+    with st.form("Client Register Form Hub"):
+        rg_username = st.text_input("Choose Unique Client Username")
+        rg_password = st.text_input("Trading Master Dashboard Password (For Auth)", type="password")
+        rg_apikey = st.text_input("Delta Exchange API Public Key", type="password")
+        rg_apisecret = st.text_input("Delta Exchange API Secret Private Key", type="password")
+        
+        r_col1, r_col2 = st.columns(2)
+        with r_col1: rg_btc = st.number_input("Assigned BTC Lots Size Default", min_value=1, value=4)
+        with r_col2: rg_eth = st.number_input("Assigned ETH Lots Size Default", min_value=1, value=4)
+        
+        submit_register = st.form_submit_button("➕ REGISTER CLIENT SECURELY INTO SYSTEM")
+        if submit_register:
+            if rg_username and rg_password and rg_apikey and rg_apisecret:
+                all_current_u = load_users()
+                if rg_username in all_current_u:
+                    st.error("Username already registered in database file anchor!")
+                else:
+                    all_current_u[rg_username] = {
+                        "password": rg_password,
+                        "api_key": rg_apikey,
+                        "api_secret": rg_apisecret,
+                        "btc_qty": int(rg_btc),
+                        "eth_qty": int(rg_eth)
+                    }
+                    save_users(all_current_u)
+                    
+                    mem.users_db[rg_username] = {
+                        "api_key": rg_apikey,
+                        "api_secret": rg_apisecret,
+                        "btc_qty": int(rg_btc),
+                        "eth_qty": int(rg_eth),
+                        "active": True
+                    }
+                    add_log(f"New client registered successfully: '{rg_username}'", type_icon="👤")
+                    st.success(f"Client account {rg_username} setup active!")
+                    st.rerun()
+            else:
+                st.error("Please fill out all registration fields fully.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# =====================================================
+# MASTER ACCOUNT & DELTA API CONTROLLER
+# =====================================================
+st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
+st.markdown('<div class="panel-heading">📁 INDIVIDUAL ACCOUNT PROFILES MANAGEMENT</div>', unsafe_allow_html=True)
 
 active_user = st.session_state.get("current_user", "Master_Trader")
 all_u = load_users()
@@ -548,24 +801,13 @@ if user_has_keys:
     btc_lots = mem.users_db[active_user]["btc_qty"]
     eth_lots = mem.users_db[active_user]["eth_qty"]
     
-    st.markdown(f"""
-    <table class="terminal-table" style="margin-bottom: 20px;">
-        <thead><tr><th>User Profile</th><th>Status</th><th>Allocated Qty (BTC / ETH)</th></tr></thead>
-        <tbody><tr>
-            <td style="color: #38bdf8; font-weight: bold;">{active_user}</td>
-            <td style="color: #39ff14; font-weight: bold; text-shadow: 0px 0px 8px #39ff14;">🟢 KEYS LOCKED & LIVE</td>
-            <td style="color: #ffff00; font-weight: bold;">{btc_lots} Lots / {eth_lots} Lots</td>
-        </tr></tbody>
-    </table>
-    """, unsafe_allow_html=True)
+    st.write(f"**Current Active User:** `{active_user}` | **Allocated Sizing:** `{btc_lots} BTC Lots / {eth_lots} ETH Lots`")
     
     with st.form("Quantity Form Controller"):
-        qc1, qc2, qc3 = st.columns([2, 2, 1])
+        qc1, qc2 = st.columns(2)
         with qc1: new_btc = st.number_input("BTC Qty", min_value=1, value=int(btc_lots))
         with qc2: new_eth = st.number_input("ETH Qty", min_value=1, value=int(eth_lots))
-        with qc3:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            apply_qty = st.form_submit_button("UPDATE QTY")
+        apply_qty = st.form_submit_button("UPDATE QTY")
         if apply_qty:
             mem.users_db[active_user]["btc_qty"] = new_btc
             mem.users_db[active_user]["eth_qty"] = new_eth
@@ -576,7 +818,7 @@ if user_has_keys:
             add_log(f"Quantity sync complete.")
             st.rerun()
 
-    if st.button("✏️ CHANGE / UPDATE API KEYS", use_container_width=True):
+    if st.button("✏️ MANUALLY RE-WRITE CURRENT ACCOUNT KEYS", key="btn_rewrite_ap"):
         st.session_state["change_api_mode"] = True
         st.rerun()
 else:
@@ -586,7 +828,7 @@ else:
         with cc1: u_key = st.text_input("Delta Exchange API Key", type="password")
         with cc2: u_sec = st.text_input("Delta Exchange API Secret Key", type="password")
         
-        save_triggered = st.form_submit_button("🔒 LOCK NEW API KEYS AND START ENGINE", use_container_width=True)
+        save_triggered = st.form_submit_button("🔒 LOCK NEW API KEYS AND START ENGINE")
         if save_triggered and u_key and u_sec:
             mem.users_db[active_user] = {"api_key": u_key, "api_secret": u_sec, "btc_qty": 4, "eth_qty": 4, "active": True}
             if active_user in all_u:
@@ -599,18 +841,17 @@ else:
             st.rerun()
             
     if st.session_state.get("change_api_mode"):
-        if st.button("❌ CANCEL CHANGE", use_container_width=True):
+        if st.button("❌ CANCEL CHANGE", key="btn_cncl_ch"):
             st.session_state["change_api_mode"] = False
             st.rerun()
 
 st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-if st.button("🔴 LOGOUT TERMINAL SESSION", use_container_width=True):
+if st.button("🔴 LOGOUT TERMINAL SESSION", key="btn_logout_sess"):
     if active_user in mem.users_db: 
         mem.users_db[active_user] = {"api_key": "", "api_secret": "", "btc_qty": 4, "eth_qty": 4, "active": False}
     st.session_state["logged_in"] = False
     st.session_state["current_user"] = None
     st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Live dynamic engine page refresh handler
 time.sleep(1)
