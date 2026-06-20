@@ -212,20 +212,6 @@ def place_target_order(symbol, size, side, target_price, api_key, api_secret):
     if res and res.get("success") is True: return res["result"].get("id")
     return None
 
-def close_open_position(symbol, api_key, api_secret):
-    """Safety addition: Automatically kills orphan positions on exchange if memory breaks."""
-    try:
-        res = send_signed_request("GET", "/v2/positions/margined", api_key, api_secret)
-        if res and "result" in res:
-            for pos in res["result"]:
-                if pos.get("product_symbol") == symbol:
-                    size = abs(int(pos.get("size", 0)))
-                    if size > 0:
-                        side = "sell" if int(pos.get("size")) > 0 else "buy"
-                        payload = {"product_symbol": symbol, "size": size, "side": side, "order_type": "market_order", "reduce_only": True}
-                        send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
-    except: pass
-
 def get_open_position_qty(symbol, api_key, api_secret):
     try:
         res = send_signed_request("GET", "/v2/positions/margined", api_key, api_secret)
@@ -286,10 +272,7 @@ def core_execution_engine(shared_mem):
                     trade['live_pnl'] = calc_pnl
                     shared_mem.last_triggered_setup_info[sym]["live_pnl"] = calc_pnl
                     
-                    # ✅ FIXED: Protection against phantom memory leaks and strict exchange validation
                     if ex_qty == 0 or (trade['side'] == 'buy' and live_price <= trade['sl']) or (trade['side'] == 'sell' and live_price >= trade['sl']):
-                        # Force close position on exchange before resetting local state memory
-                        close_open_position(sym, u_db['api_key'], u_db['api_secret'])
                         del shared_mem.active_trades[sym][user]
                         shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
                         add_log(f"Position closed safely for {user} on {sym}", type_icon="🛑")
@@ -367,15 +350,6 @@ def core_execution_engine(shared_mem):
                         t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
 
                     if triggered and risk > 0:
-                        # 🚨 CRITICAL FIX: Verify market validation condition prior to execution setup
-                        current_ltp = shared_mem.ticker_feeds[sym]["ltp"]
-                        if side == "buy" and current_ltp <= sl:
-                            add_log(f"Execution Skiped on {sym}: Price already dropped below SL level.", type_icon="⚠️")
-                            continue
-                        if side == "sell" and current_ltp >= sl:
-                            add_log(f"Execution Skiped on {sym}: Price already spiked above SL level.", type_icon="⚠️")
-                            continue
-
                         shared_mem.is_processing = True
                         shared_mem.ordered_candles[sym] = c_time
                         shared_mem.strategy_metrics[s_key]["triggers"] += 1
@@ -522,6 +496,7 @@ with col_body_l:
     engine_status_label = "🟩 ACTIVE (RUNNING)" if mem.global_engine_running else "🟫 DEACTIVATED (PAUSED)"
     st.markdown(f"<div style='font-size:12px; margin-bottom:10px; color:#ffff00;'>CURRENT STATUS: <b style='color:#38bdf8;'>{engine_status_label}</b></div>", unsafe_allow_html=True)
     
+    # ✅ FIX: Native callbacks to guarantee instant re-rendering on Streamlit Cloud
     if mem.global_engine_running:
         st.button("🔴 STOP SCANNER", on_click=trigger_stop_action, use_container_width=True)
     else:
