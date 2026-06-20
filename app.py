@@ -33,10 +33,15 @@ class GlobalEngineMemory:
         self.daily_pnl_tracker = {}
         self.max_daily_loss_limit = 50.0
         
+        # Dynamic tracking setup initializer for rendering
         self.last_triggered_setup_info = {
-            "BTCUSD": {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0},
-            "ETHUSD": {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
+            "BTCUSD": {"entry": "WAITING", "sl": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0, "current_stage": 0},
+            "ETHUSD": {"entry": "WAITING", "sl": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0, "current_stage": 0}
         }
+        # Dynamic allocation for displaying targets up to 20 stages dynamically
+        for i in range(1, 21):
+            self.last_triggered_setup_info["BTCUSD"][f"t{i}"] = "WAITING"
+            self.last_triggered_setup_info["ETHUSD"][f"t{i}"] = "WAITING"
         
         self.strategy_switches = {
             "5-STAR LONG": True, "5-STAR SHORT": True, "5-STAR BB BUY": True, "5-STAR BB SELL": True
@@ -47,7 +52,7 @@ class GlobalEngineMemory:
             "5-STAR BB BUY": {"triggers": 0}, "5-STAR BB SELL": {"triggers": 0}
         }
         self.last_terminal_logs = [
-            "<div><span style='color: #38bdf8;'>[SYSTEM]</span> 🚀 Advance Controller Engine Activated with Live RSI Synchronization.</div>"
+            "<div><span style='color: #38bdf8;'>[SYSTEM]</span> 🚀 Engine Activated with Pre-Entry SL Protection Guard.</div>"
         ]
         self.ticker_feeds = {
             "BTCUSD": {"ltp": 0.0, "rsi_1m": 0.0, "rsi_5m": 0.0, "rsi_15m": 0.0}, 
@@ -231,7 +236,6 @@ def force_close_all_orders_and_positions(api_key, api_secret):
         return False
 
 def add_log(msg, type_icon="🚀"):
-    import datetime
     ist_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     timestamp = ist_time.strftime("%H:%M:%S")
     full_msg = f"<div><span style='color: #38bdf8;'>[{timestamp}]</span> {type_icon} <span style='color:#ffff00; font-weight:bold;'>{msg}</span></div>"
@@ -263,7 +267,7 @@ def fetch_candles_df(symbol, timeframe, limit=200):
     except: return None
 
 # =====================================================
-# BACKGROUND TRADE ENGINE THREAD WITH LIVE TRACKING & SL/TG TRIGGERS
+# BACKGROUND TRADE ENGINE THREAD WITH MILESTONE TRAILING & GUARD CHECKS
 # =====================================================
 def core_execution_engine(shared_mem):
     while True:
@@ -285,17 +289,15 @@ def core_execution_engine(shared_mem):
                                 side = pos.get("side", "buy").lower()
                                 entry_p = float(pos.get("entry_price", shared_mem.ticker_feeds[sym]["ltp"]))
                                 
-                                # Instantly force-pull historical/pre-existing position matching user account bounds
                                 if user not in shared_mem.active_trades[sym]:
+                                    targets_dict = {f"t{i}": entry_p * (1 + 0.01 * i) if side == 'buy' else entry_p * (1 - 0.01 * i) for i in range(1, 21)}
                                     shared_mem.active_trades[sym][user] = {
                                         'side': side, 'entry_price': entry_p, 'sl': entry_p * 0.95 if side == 'buy' else entry_p * 1.05, 
-                                        't1': entry_p * 1.02, 't2': entry_p * 1.04, 'current_stage': 0, 
-                                        'qty': sz, 'initial_qty': sz, 'live_pnl': 0.0, 'is_external': True
+                                        'current_stage': 0, 'qty': sz, 'initial_qty': sz, 'live_pnl': 0.0, 'is_external': True, 'targets': targets_dict
                                     }
                                 else:
                                     shared_mem.active_trades[sym][user]['qty'] = sz
                     
-                    # Clear locally stored data if position squared off outside bounds
                     for sym in ["BTCUSD", "ETHUSD"]:
                         if user in shared_mem.active_trades[sym] and sym not in active_symbols_this_run:
                             calc_pnl = shared_mem.active_trades[sym][user].get('live_pnl', 0.0)
@@ -311,10 +313,11 @@ def core_execution_engine(shared_mem):
             for sym in symbols:
                 r = requests.get(f"{BASE_URL}/v2/tickers/{sym}", timeout=4).json()
                 if r and "result" in r: 
-                    shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
+                    shared_mem.ticker_feeds[sym]["mark_price"] = round(float(r["result"].get("mark_price", 0)), 2)
+                    shared_mem.ticker_feeds[sym]["ltp"] = shared_mem.ticker_feeds[sym]["mark_price"]
         except: pass
 
-        # --- LIVE TERMINAL SL TRAILING & TARGET LIFECYCLE CONTROLLER ---
+        # --- DYNAMIC MILESTONE CONTROLLER (T1 -> T20) ---
         for sym in ["BTCUSD", "ETHUSD"]:
             live_price = shared_mem.ticker_feeds[sym]["ltp"]
             if not live_price or sym not in shared_mem.active_trades: continue
@@ -328,44 +331,78 @@ def core_execution_engine(shared_mem):
                 trade['live_pnl'] = round((live_price - trade['entry_price']) * mult * trade['qty'], 2)
                 is_buy = (trade['side'] == 'buy')
 
-                # 1. LIVE STOP LOSS TRIGGER DETECTOR
+                # 1. LIVE HARD STOP LOSS TRIPPED DETECTOR
                 if (is_buy and live_price <= trade['sl']) or (not is_buy and live_price >= trade['sl']):
-                    add_log(f"💥 SL HIT for {user} on {sym} @ ${live_price:,.2f} (Cleared Qty: {trade['qty']})", type_icon="❌")
+                    add_log(f"💥 STOP LOSS TRIGGERED for {user} on {sym} @ ${live_price:,.2f} (Cleared Remaining Qty: {trade['qty']})", type_icon="❌")
                     force_close_all_orders_and_positions(u_db['api_key'], u_db['api_secret'])
                     continue
 
-                # 2. LIVE TARGET 1 HIT -> BOOK 50% & TRAIL SL TO COST
-                if trade['current_stage'] == 0:
-                    if (is_buy and live_price >= trade['t1']) or (not is_buy and live_price <= trade['t1']):
-                        trade['current_stage'] = 1
-                        old_qty = trade['qty']
-                        booked_qty = int(old_qty * 0.50)
+                # 2. RUNTIME RECURSIVE MILESTONE CHECKER FOR TRAILING
+                current_stage = trade['current_stage'] 
+                next_stage = current_stage + 1
+                
+                if next_stage <= 20:
+                    t_key = f"t{next_stage}"
+                    target_price = trade['targets'].get(t_key, 0.0)
+                    
+                    # Check if Next Target Milestone has crossed
+                    if (is_buy and live_price >= target_price) or (not is_buy and live_price <= target_price):
+                        trade['current_stage'] = next_stage
+                        shared_mem.last_triggered_setup_info[sym]["current_stage"] = next_stage
+                        opposite_side = "sell" if is_buy else "buy"
                         
-                        if booked_qty > 0:
-                            opposite_side = "sell" if is_buy else "buy"
-                            # Execute Market Order for Partial Booking
-                            send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {
-                                "product_symbol": sym, "size": booked_qty, "side": opposite_side, "order_type": "market_order"
-                            })
-                            # Cancel pre-existing bracket orders to refresh structures
-                            send_signed_request("DELETE", "/v2/orders/all", u_db['api_key'], u_db['api_secret'], {})
-                            
-                            # Recalculate remaining pool sizes
+                        # --- PHASE A: TARGET 1 HIT (Book 50%, SL to Cost) ---
+                        if next_stage == 1:
+                            old_qty = trade['qty']
+                            booked_qty = int(old_qty * 0.50)
                             rem_qty = old_qty - booked_qty
                             trade['qty'] = rem_qty
-                            trade['sl'] = trade['entry_price'] # Trail Remaining to Cost Engine
+                            trade['sl'] = trade['entry_price'] 
+                            
+                            if booked_qty > 0:
+                                send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {
+                                    "product_symbol": sym, "size": booked_qty, "side": opposite_side, "order_type": "market_order"
+                                })
+                            send_signed_request("DELETE", "/v2/orders/all", u_db['api_key'], u_db['api_secret'], {})
                             
                             if rem_qty > 0:
                                 place_stop_loss(sym, rem_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
-                                place_target_order(sym, rem_qty, opposite_side, trade['t2'], u_db['api_key'], u_db['api_secret'])
+                            add_log(f"🎯 T1 HIT for {user} ({sym})! 50% Booked. Bachi Qty: {rem_qty} Trailed to Cost: ${trade['sl']:,.2f}", type_icon="🛡️")
+                        
+                        # --- PHASE B: TARGET 2 HIT (Book 25%, SL to T1) ---
+                        elif next_stage == 2:
+                            old_qty = trade['qty']
+                            booked_qty = int(trade['initial_qty'] * 0.25)
+                            if booked_qty > old_qty: booked_qty = old_qty
                             
-                            add_log(f"🎯 T1 TRIGGERED for {user} ({sym})! Booked Qty: {booked_qty} @ ${live_price:,.2f} | Remaining Qty: {rem_qty} Trailed to Cost: ${trade['sl']:,.2f}", type_icon="🛡️")
+                            rem_qty = old_qty - booked_qty
+                            trade['qty'] = rem_qty
+                            trade['sl'] = trade['targets']["t1"] 
+                            
+                            if booked_qty > 0:
+                                send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {
+                                    "product_symbol": sym, "size": booked_qty, "side": opposite_side, "order_type": "market_order"
+                                })
+                            send_signed_request("DELETE", "/v2/orders/all", u_db['api_key'], u_db['api_secret'], {})
+                            
+                            if rem_qty > 0:
+                                place_stop_loss(sym, rem_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
+                            add_log(f"🚀 T2 HIT for {user}! 25% Booked. New Trailed SL to T1: ${trade['sl']:,.2f} | Pure Trailing Only Mode Activated.", type_icon="📈")
 
-                # 3. LIVE TARGET 2 HIT -> FULL CLOSURE
-                if trade['current_stage'] == 1:
-                    if (is_buy and live_price >= trade['t2']) or (not is_buy and live_price <= trade['t2']):
-                        add_log(f"🚀 T2 MAX TARGET ACHIEVED for {user} on {sym}! Squared Off Remaining Qty: {trade['qty']} @ ${live_price:,.2f}", type_icon="💰")
-                        force_close_all_orders_and_positions(u_db['api_key'], u_db['api_secret'])
+                        # --- PHASE C: TARGET 3 SE T19 HIT (NO BOOKING - PURE SL TRAILING ONLY) ---
+                        elif 3 <= next_stage <= 19:
+                            prev_t_key = f"t{next_stage - 1}"
+                            trade['sl'] = trade['targets'][prev_t_key] 
+                            
+                            send_signed_request("DELETE", "/v2/orders/all", u_db['api_key'], u_db['api_secret'], {})
+                            place_stop_loss(sym, trade['qty'], opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
+                            
+                            add_log(f"🔄 T{next_stage} HIT (No Booking)! Trailed SL shifted to T{next_stage - 1}: ${trade['sl']:,.2f} (Holding Qty: {trade['qty']})", type_icon="⚡")
+
+                        # --- PHASE D: TARGET 20 HIT (Terminal Absolute Exit Point) ---
+                        elif next_stage == 20:
+                            add_log(f"🏆 MAX T20 ACHIEVED for {user} on {sym}! Squaring Off remaining 25% positions entirely.", type_icon="💰")
+                            force_close_all_orders_and_positions(u_db['api_key'], u_db['api_secret'])
 
         if not shared_mem.global_engine_running:
             time.sleep(1)
@@ -402,73 +439,80 @@ def core_execution_engine(shared_mem):
                 c_time = df_1m["time"].iloc[-1]
                 
                 if sym in shared_mem.ordered_candles and shared_mem.ordered_candles[sym] == c_time: continue
-                triggered, s_key, side, entry, sl, t1, t2 = False, "", "", 0.0, 0.0, 0.0, 0.0
+                triggered, s_key, side, entry, sl = False, "", "", 0.0, 0.0
                 
                 if shared_mem.strategy_switches["5-STAR LONG"] and rsi_15 >= 60 and rsi_5 >= 60 and rsi_1 > 40 and rsi_1 > rsi_1_prev and (43 >= rsi_1_prev >= 20):
                     triggered, s_key, side = True, "5-STAR LONG", "buy"
                     entry = round(float(df_1m["high"].iloc[-1]), 2)
                     sl = round(float(df_1m["low"].iloc[-16:].min()), 2)
-                    risk = entry - sl
-                    t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
                 
                 elif shared_mem.strategy_switches["5-STAR SHORT"] and rsi_15 <= 40 and rsi_5 <= 40 and rsi_1 < 60 and rsi_1 < rsi_1_prev and (80 >= rsi_1_prev >= 57):
                     triggered, s_key, side = True, "5-STAR SHORT", "sell"
                     entry = round(float(df_1m["low"].iloc[-1]), 2)
                     sl = round(float(df_1m["high"].iloc[-16:].max()), 2)
-                    risk = sl - entry
-                    t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
                 
                 elif shared_mem.strategy_switches["5-STAR BB BUY"] and rsi_15 > 60 and rsi_5 > 60 and rsi_1_prev < 61 and rsi_1 >= 60 and close_1m > df_1m["BB_up"].iloc[-1]:
                     triggered, s_key, side = True, "5-STAR BB BUY", "buy"
                     entry, sl = round(float(df_1m["high"].iloc[-1]), 2), round(float(df_1m["low"].iloc[-1]), 2)
-                    risk = entry - sl
-                    t1, t2 = round(entry + risk, 2), round(entry + 2*risk, 2)
                 
                 elif shared_mem.strategy_switches["5-STAR BB SELL"] and rsi_15 < 40 and rsi_5 < 40 and rsi_1_prev > 39 and rsi_1 <= 40 and close_1m < df_1m["BB_low"].iloc[-1]:
                     triggered, s_key, side = True, "5-STAR BB SELL", "sell"
                     entry, sl = round(float(df_1m["low"].iloc[-1]), 2), round(float(df_1m["high"].iloc[-1]), 2)
-                    risk = sl - entry
-                    t1, t2 = round(entry - risk, 2), round(entry - 2*risk, 2)
 
-                if triggered and risk > 0:
-                    shared_mem.is_processing = True
-                    shared_mem.ordered_candles[sym] = c_time
-                    shared_mem.strategy_metrics[s_key]["triggers"] += 1
-                    add_log(f"{s_key} Triggered on {sym}!", type_icon="⚡")
+                if triggered:
+                    # =====================================================
+                    # 🛡️ SAFETY CHECK: HIT SL BEFORE ENTRY SECURITY GUARD
+                    # =====================================================
+                    live_p = shared_mem.ticker_feeds[sym]["ltp"]
+                    is_setup_invalid = False
                     
-                    shared_mem.last_triggered_setup_info[sym] = {
-                        "entry": f"${entry:,.2f}", "sl": f"${sl:,.2f}", "t1": f"${t1:,.2f}", "t2": f"${t2:,.2f}", "status": f"{s_key} ({side.upper()})", "live_pnl": 0.0
-                    }
-                    
-                    for user, u_db in shared_mem.users_db.items():
-                        if user not in shared_mem.daily_pnl_tracker or shared_mem.daily_pnl_tracker[user]["date"] != today_str:
-                            shared_mem.daily_pnl_tracker[user] = {"realized": 0.0, "date": today_str, "blocked": False}
+                    if side == "buy" and live_p <= sl:
+                        is_setup_invalid = True
+                    elif side == "sell" and live_p >= sl:
+                        is_setup_invalid = True
+
+                    if is_setup_invalid:
+                        add_log(f"🚫 SIGNAL REJECTED ({s_key}) on {sym}: Price crossed SL before Entry! (No Trade Taken)", type_icon="🛑")
+                        shared_mem.ordered_candles[sym] = c_time  # Is candle signal ko permanently skip karo
+                        continue
+
+                    risk = abs(entry - sl)
+                    if risk > 0:
+                        shared_mem.is_processing = True
+                        shared_mem.ordered_candles[sym] = c_time
+                        shared_mem.strategy_metrics[s_key]["triggers"] += 1
+                        add_log(f"{s_key} Triggered safely on {sym}!", type_icon="⚡")
                         
-                        if shared_mem.daily_pnl_tracker[user]["blocked"]:
-                            continue
-                            
-                        u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
-                        if not u_db.get("api_key"): continue
+                        targets_dict = {}
+                        mult = 1 if side == "buy" else -1
+                        for i in range(1, 21):
+                            targets_dict[f"t{i}"] = round(entry + (mult * i * risk), 2)
                         
-                        res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": u_qty, "side": side, "order_type": "market_order"} )
-                        if res and res.get("success") is True:
-                            opposite_side = "sell" if side == "buy" else "buy"
-                            t1_qty = int(u_qty * 0.50)  
-                            t2_qty = int(u_qty * 0.25)  
+                        shared_mem.last_triggered_setup_info[sym] = {
+                            "entry": f"${entry:,.2f}", "sl": f"${sl:,.2f}", "status": f"{s_key} ({side.upper()})", "live_pnl": 0.0, "current_stage": 0
+                        }
+                        for i in range(1, 21):
+                            shared_mem.last_triggered_setup_info[sym][f"t{i}"] = f"${targets_dict[f't{i}']:,.2f}"
+                        
+                        for user, u_db in shared_mem.users_db.items():
+                            if user not in shared_mem.daily_pnl_tracker or shared_mem.daily_pnl_tracker[user]["date"] != today_str:
+                                shared_mem.daily_pnl_tracker[user] = {"realized": 0.0, "date": today_str, "blocked": False}
                             
-                            if t1_qty > 0: place_target_order(sym, t1_qty, opposite_side, t1, u_db['api_key'], u_db['api_secret'])
-                            if t2_qty > 0: place_target_order(sym, t2_qty, opposite_side, t2, u_db['api_key'], u_db['api_secret'])
+                            if shared_mem.daily_pnl_tracker[user]["blocked"]: continue
+                            u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
+                            if not u_db.get("api_key"): continue
                             
-                            place_stop_loss(sym, t1_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                            place_stop_loss(sym, t2_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                            place_stop_loss(sym, (u_qty - t1_qty - t2_qty), opposite_side, sl, u_db['api_key'], u_db['api_secret'])
-                            
-                            if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
-                            shared_mem.active_trades[sym][user] = {
-                                'side': side, 'entry_price': entry, 'sl': sl, 't1': t1, 't2': t2,
-                                'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0, 'is_external': False
-                            }
-                    break
+                            res = send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], {"product_symbol": sym, "size": u_qty, "side": side, "order_type": "market_order"} )
+                            if res and res.get("success") is True:
+                                opposite_side = "sell" if side == "buy" else "buy"
+                                place_stop_loss(sym, u_qty, opposite_side, sl, u_db['api_key'], u_db['api_secret'])
+                                
+                                if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
+                                shared_mem.active_trades[sym][user] = {
+                                    'side': side, 'entry_price': entry, 'sl': sl, 'targets': targets_dict,
+                                    'current_stage': 0, 'qty': u_qty, 'initial_qty': u_qty, 'live_pnl': 0.0, 'is_external': False
+                                }
+                        break
         shared_mem.is_processing = False
         time.sleep(1)
 
@@ -494,8 +538,11 @@ def trigger_global_kill_switch():
             force_close_all_orders_and_positions(u_db["api_key"], u_db["api_secret"])
                 
     mem.active_trades = {"BTCUSD": {}, "ETHUSD": {}}
-    mem.last_triggered_setup_info["BTCUSD"] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-    mem.last_triggered_setup_info["ETHUSD"] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
+    mem.last_triggered_setup_info["BTCUSD"] = {"entry": "WAITING", "sl": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0, "current_stage": 0}
+    mem.last_triggered_setup_info["ETHUSD"] = {"entry": "WAITING", "sl": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0, "current_stage": 0}
+    for i in range(1, 21):
+        mem.last_triggered_setup_info["BTCUSD"][f"t{i}"] = "WAITING"
+        mem.last_triggered_setup_info["ETHUSD"][f"t{i}"] = "WAITING"
 
 # =====================================================
 # RENDER LAYOUT
@@ -526,20 +573,22 @@ with col_btc_w:
     
     cls_entry = "signal-value-active" if btc_info['entry'] != "WAITING" else "signal-value-waiting"
     cls_sl = "signal-value-active" if btc_info['sl'] != "WAITING" else "signal-value-waiting"
-    cls_t1 = "signal-value-active" if btc_info['t1'] != "WAITING" else "signal-value-waiting"
-    cls_t2 = "signal-value-active" if btc_info['t2'] != "WAITING" else "signal-value-waiting"
+    
+    stage_val = btc_info.get("current_stage", 0)
+    next_disp_t = f"t{stage_val+1}" if stage_val < 20 else "t20"
+    target_text_val = btc_info.get(next_disp_t, "WAITING")
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
         <div class="live-pnl-text {pnl_class}">Global Setup P&L: {'+' if pnl_val >= 0 else ''}${pnl_val:,.2f}</div>
     </div>
     <div class="signal-data-box">
-        <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {btc_info['status']}</div>
+        <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {btc_info['status']} | ACTIVE MILESTONE: T{stage_val}</div>
         <div class="signal-grid">
             <div><span class="signal-metric">ENTRY:</span> <span class="{cls_entry}">{btc_info['entry']}</span></div>
-            <div><span class="signal-metric">STOP LOSS:</span> <span class="{cls_sl}">{btc_info['sl']}</span></div>
-            <div><span class="signal-metric">TARGET 1:</span> <span class="{cls_t1}">{btc_info['t1']}</span></div>
-            <div><span class="signal-metric">TARGET 2:</span> <span class="{cls_t2}">{btc_info['t2']}</span></div>
+            <div><span class="signal-metric">TRAILED SL:</span> <span class="{cls_sl}">{btc_info['sl']}</span></div>
+            <div><span class="signal-metric">CURRENT SL ANCHOR:</span> <span class="signal-value-active">T{max(0, stage_val-1) if stage_val >= 2 else ('COST' if stage_val==1 else 'INITIAL')}</span></div>
+            <div><span class="signal-metric">NEXT TARGET MILESTONE:</span> <span class="signal-value-active">{next_disp_t.upper()} ({target_text_val})</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -562,20 +611,22 @@ with col_eth_w:
     
     cls_entry_eth = "signal-value-active" if eth_info['entry'] != "WAITING" else "signal-value-waiting"
     cls_sl_eth = "signal-value-active" if eth_info['sl'] != "WAITING" else "signal-value-waiting"
-    cls_t1_eth = "signal-value-active" if eth_info['t1'] != "WAITING" else "signal-value-waiting"
-    cls_t2_eth = "signal-value-active" if eth_info['t2'] != "WAITING" else "signal-value-waiting"
+    
+    stage_val_eth = eth_info.get("current_stage", 0)
+    next_disp_t_eth = f"t{stage_val_eth+1}" if stage_val_eth < 20 else "t20"
+    target_text_val_eth = eth_info.get(next_disp_t_eth, "WAITING")
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
         <div class="live-pnl-text {pnl_class_eth}">Global Setup P&L: {'+' if pnl_val_eth >= 0 else ''}${pnl_val_eth:,.2f}</div>
     </div>
     <div class="signal-data-box">
-        <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {eth_info['status']}</div>
+        <div style="font-size: 11px; color: #38bdf8; font-weight: bold; margin-bottom: 6px;">🎯 SETUP STATUS: {eth_info['status']} | ACTIVE MILESTONE: T{stage_val_eth}</div>
         <div class="signal-grid">
             <div><span class="signal-metric">ENTRY:</span> <span class="{cls_entry_eth}">{eth_info['entry']}</span></div>
-            <div><span class="signal-metric">STOP LOSS:</span> <span class="{cls_sl_eth}">{eth_info['sl']}</span></div>
-            <div><span class="signal-metric">TARGET 1:</span> <span class="{cls_t1_eth}">{eth_info['t1']}</span></div>
-            <div><span class="signal-metric">TARGET 2:</span> <span class="{cls_t2_eth}">{eth_info['t2']}</span></div>
+            <div><span class="signal-metric">TRAILED SL:</span> <span class="{cls_sl_eth}">{eth_info['sl']}</span></div>
+            <div><span class="signal-metric">CURRENT SL ANCHOR:</span> <span class="signal-value-active">T{max(0, stage_val_eth-1) if stage_val_eth >= 2 else ('COST' if stage_val_eth==1 else 'INITIAL')}</span></div>
+            <div><span class="signal-metric">NEXT TARGET MILESTONE:</span> <span class="signal-value-active">{next_disp_t_eth.upper()} ({target_text_val_eth})</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -605,7 +656,7 @@ for u_name, u_config in mem.users_db.items():
     current_open_running_pnl = btc_pnl + eth_pnl
     
     today_stamp = datetime.date.today().strftime("%Y-%m-%d")
-    realized_day_pnl = mem.daily_pnl_tracker.get(u_name, {}).get("realized", 0.0) if mem.daily_pnl_tracker.get(u_name, {}).get("date") == today_stamp else 0.0
+    realized_day_pnl = mem.daily_pnl_tracker.get(u_name, {}).get("realized", 0.0) if (isinstance(mem.daily_pnl_tracker.get(u_name), dict) and mem.daily_pnl_tracker.get(u_name, {}).get("date") == today_stamp) else 0.0
     total_net_pnl = current_open_running_pnl + realized_day_pnl
     
     if mem.daily_pnl_tracker.get(u_name, {}).get("blocked", False):
@@ -630,7 +681,7 @@ if not has_records:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =====================================================
-# 🚨 LIVE RUNNING POSITIONS MONITOR PANEL (STRICT USER ISOLATION SYNC)
+# 🚨 LIVE RUNNING POSITIONS MONITOR PANEL
 # =====================================================
 st.markdown('<div class="grid-panel">', unsafe_allow_html=True)
 st.markdown('<div class="panel-heading">🚨 LIVE RUNNING POSITIONS MONITOR (DELTA EXCHANGE)</div>', unsafe_allow_html=True)
@@ -641,7 +692,7 @@ with p_hcol2: st.markdown('<div class="client-row-header">SYMBOL</div>', unsafe_
 with p_hcol3: st.markdown('<div class="client-row-header">SIDE</div>', unsafe_allow_html=True)
 with p_hcol4: st.markdown('<div class="client-row-header">QTY (LOTS)</div>', unsafe_allow_html=True)
 with p_hcol5: st.markdown('<div class="client-row-header">AVG ENTRY</div>', unsafe_allow_html=True)
-with p_hcol6: st.markdown('<div class="client-row-header">FLOATING P&L / SOURCE</div>', unsafe_allow_html=True)
+with p_hcol6: st.markdown('<div class="client-row-header">FLOATING P&L / STATUS</div>', unsafe_allow_html=True)
 
 has_active_positions = False
 for sym in ["BTCUSD", "ETHUSD"]:
@@ -653,7 +704,7 @@ for sym in ["BTCUSD", "ETHUSD"]:
                 
                 side_color = "#00ff00" if trade_details['side'].lower() == "buy" else "#ff0000"
                 pnl_color = "#10b981" if trade_details['live_pnl'] >= 0 else "#ef4444"
-                source_lbl = "<span style='color:#a855f7;font-size:10px;'> [PRE-EXISTING ACTIVE]</span>" if trade_details.get('is_external') else "<span style='color:#38bdf8;font-size:10px;'> [ALGO INITIALIZED]</span>"
+                source_lbl = f" <span style='color:#38bdf8;font-size:10px;'> [MILESTONE: T{trade_details['current_stage']}]</span>"
                 
                 p_rcol1, p_rcol2, p_rcol3, p_rcol4, p_rcol5, p_rcol6 = st.columns([2, 1.5, 1.5, 2, 2, 3])
                 with p_rcol1: st.markdown(f'<div class="client-row-data" style="color: #38bdf8;">{u_name}</div>', unsafe_allow_html=True)
@@ -737,7 +788,7 @@ with tab_rms:
             add_log(f"Unlocked account bounds for {target_reset_user}", type_icon="🔓")
             st.rerun()
     else:
-        st.info("No users currently blocked under RMS safety thresholds.")
+        st.info("No users currently blocked under RMS thresholds.")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with tab_reg:
