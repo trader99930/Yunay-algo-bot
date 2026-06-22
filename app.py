@@ -11,7 +11,7 @@ import streamlit as st
 import datetime
 from auth import auth_page, load_users, save_users
 
-# ✅ SYSTEM STABILITY FOR TERMUX/IPV4
+# ✅ SYSTEM STABILITY FOR TERMUX / IPV4 OPTIMIZATION
 import urllib3.util.connection as urllib3_cn
 urllib3_cn.HAS_IPV6 = False
 
@@ -244,6 +244,20 @@ def place_stop_loss(symbol, size, side, sl_price, api_key, api_secret):
     if res and res.get("success") is True: return res["result"].get("id")
     return None
 
+def place_limit_profit_target(symbol, size, side, price, api_key, api_secret):
+    if size <= 0: return None
+    if "BTCUSD" in symbol:
+        final_price = str(round(float(price) * 2) / 2)
+    else:
+        final_price = str(round(float(price), 2))
+    payload = {
+        "product_symbol": symbol, "size": int(size), "side": side.lower(),
+        "order_type": "limit_order", "limit_price": final_price, "reduce_only": True
+    }
+    res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
+    if res and res.get("success") is True: return res["result"].get("id")
+    return None
+
 def get_open_position_qty(symbol, api_key, api_secret):
     try:
         res = send_signed_request("GET", "/v2/positions/margined", api_key, api_secret)
@@ -345,8 +359,22 @@ def core_execution_engine(shared_mem):
                             add_log(f"💥 Breakout Triggered for {user} on {sym}!", type_icon="⚡")
                             
                             opposite_side = "sell" if trade['side'] == 'buy' else 'buy'
+                            
+                            # Place active stop loss on exchange
                             sl_id = place_stop_loss(sym, ex_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
                             trade['exchange_sl_id'] = sl_id
+                            
+                            # Calculate exit quantities for targets
+                            q_t1 = int(ex_qty * 0.50)
+                            q_t2 = int(ex_qty * 0.25)
+                            q_t21 = ex_qty - q_t1 - q_t2
+                            
+                            # Place targets as absolute limit orders on exchange (LMT -> Pic 531)
+                            trade['exchange_t1_id'] = place_limit_profit_target(sym, q_t1, opposite_side, trade['targets'][1], u_db['api_key'], u_db['api_secret']) if q_t1 > 0 else None
+                            trade['exchange_t2_id'] = place_limit_profit_target(sym, q_t2, opposite_side, trade['targets'][2], u_db['api_key'], u_db['api_secret']) if q_t2 > 0 else None
+                            trade['exchange_t21_id'] = place_limit_profit_target(sym, q_t21, opposite_side, trade['targets'][21], u_db['api_key'], u_db['api_secret']) if q_t21 > 0 else None
+                            
+                            add_log(f"Target Orders Synchronized on Exchange: T1 Qty({q_t1}), T2 Qty({q_t2}), T21 Qty({q_t21})", type_icon="🎯")
                             continue
 
                     # 2. RUNTIME ACTIVE TRAILING & PARTIAL TARGET MANAGEMENT MATRIX
@@ -359,7 +387,7 @@ def core_execution_engine(shared_mem):
                             if ex_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
                             del shared_mem.active_trades[sym][user]
                             shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                            add_log(f"Stop-Loss Breached for {user} on {sym}.", type_icon="🛑")
+                            add_log(f"Stop-Loss Breached / Position Flattened for {user} on {sym}. Target open orders canceled.", type_icon="🛑")
                             continue
 
                         current_high_target_hit = trade['current_stage']
@@ -372,32 +400,24 @@ def core_execution_engine(shared_mem):
                                 trade['current_stage'] = target_idx
                                 opposite_side = "sell" if trade['side'] == 'buy' else 'buy'
                                 
-                                if trade['exchange_sl_id']:
+                                # Trailing SL: Cancel & Re-place Matrix
+                                if trade.get('exchange_sl_id'):
                                     cancel_order(trade['exchange_sl_id'], sym, u_db['api_key'], u_db['api_secret'])
                                 
-                                if target_idx == 1 and not trade.get('t1_executed', False):
-                                    exit_qty_t1 = int(trade['qty'] * 0.50)
-                                    if exit_qty_t1 > 0:
-                                        payload = {"product_symbol": sym, "size": exit_qty_t1, "side": opposite_side, "order_type": "market_order", "reduce_only": True}
-                                        send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], payload)
-                                        add_log(f"🎯 Target 1 Hit! 50% Exited.", type_icon="💰")
-                                    trade['t1_executed'] = True
+                                if target_idx == 1:
                                     trade['sl'] = trade['entry_price']  
                                     status_str = "TA1 HIT (SL @ COST)"
+                                    add_log(f"🎯 Target 1 Cross verified! 50% Qty processed. Remaining SL trailed to Cost.", type_icon="💰")
                                     
-                                elif target_idx == 2 and not trade.get('t2_executed', False):
-                                    exit_qty_t2 = int(trade['qty'] * 0.25)
-                                    if exit_qty_t2 > 0:
-                                        payload = {"product_symbol": sym, "size": exit_qty_t2, "side": opposite_side, "order_type": "market_order", "reduce_only": True}
-                                        send_signed_request("POST", "/v2/orders", u_db['api_key'], u_db['api_secret'], payload)
-                                        add_log(f"🎯 Target 2 Hit! 25% Exited.", type_icon="💰")
-                                    trade['t2_executed'] = True
+                                elif target_idx == 2:
                                     trade['sl'] = trade['targets'][1]   
                                     status_str = "TA2 HIT (SL @ TA1)"
+                                    add_log(f"🎯 Target 2 Cross verified! 25% Qty processed. Remaining SL trailed to TA1.", type_icon="💰")
                                     
                                 else:
                                     trade['sl'] = trade['targets'][target_idx - 1]
                                     status_str = f"TA{target_idx} HIT (SL @ TA{target_idx-1})"
+                                    add_log(f"🔄 📈 Target {target_idx} crossed. SL trailed to TA{target_idx-1}.", type_icon="🔄")
                                 
                                 updated_live_qty = get_open_position_qty(sym, u_db['api_key'], u_db['api_secret'])
                                 if updated_live_qty > 0:
@@ -408,10 +428,10 @@ def core_execution_engine(shared_mem):
                                 
                                 if target_idx == 21:
                                     cancel_all_orders_for_symbol(sym, u_db['api_key'], u_db['api_secret'])
-                                    close_position_market(sym, u_db['api_key'], u_db['api_secret'])
+                                    if updated_live_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
                                     del shared_mem.active_trades[sym][user]
                                     shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                                    add_log(f"🏆 MAX TARGET 21 REACHED!", type_icon="👑")
+                                    add_log(f"🏆 MAX TARGET 21 REACHED! Matrix flattened.", type_icon="👑")
                                 break
 
             # 3. SIGNAL GEN MATRIX
@@ -511,9 +531,9 @@ def core_execution_engine(shared_mem):
                                         'side': side, 'entry_price': entry, 'initial_sl': sl, 'sl': sl, 
                                         'targets': target_mesh, 'current_stage': 0, 'qty': u_qty, 
                                         'entry_order_id': order_status["order_id"], 'exchange_sl_id': None, 'is_triggered': False, 'live_pnl': 0.0,
-                                        't1_executed': False, 't2_executed': False
+                                        'exchange_t1_id': None, 'exchange_t2_id': None, 'exchange_t21_id': None
                                     }
-                                    time.sleep(0.2) # API spacing protection layer
+                                    time.sleep(0.2)
                                 else:
                                     fail_reason = order_status["error"]
                                     if fail_reason == "INSUFFICIENT_MARGIN":
@@ -524,7 +544,7 @@ def core_execution_engine(shared_mem):
                                         add_log(f"API Alert: {user} on {sym} rejected -> {fail_reason}", type_icon="❌")
                             break
             shared_mem.is_processing = False
-            time.sleep(1.5) # Anti Rate-limiting standard delay
+            time.sleep(1.5)
         except: time.sleep(1.5)
 
 if "thread_started" not in st.session_state:
