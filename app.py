@@ -29,9 +29,10 @@ class GlobalEngineMemory:
         self.ordered_candles = {}
         self.is_processing = False
         
+        # ✅ Complete Clean Slate - No WAITING Hardcoded
         self.last_triggered_setup_info = {
-            "BTCUSD": {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0},
-            "ETHUSD": {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
+            "BTCUSD": {"entry": "-", "sl": "-", "t1": "-", "t2": "-", "status": "🔵 SCANNING FOR SETUPS...", "live_pnl": 0.0},
+            "ETHUSD": {"entry": "-", "sl": "-", "t1": "-", "t2": "-", "status": "🔵 SCANNING FOR SETUPS...", "live_pnl": 0.0}
         }
         
         self.symbol_switches = {
@@ -65,7 +66,11 @@ if "mem_instance" not in st.session_state:
 
 mem = st.session_state["mem_instance"]
 
-# 🔥 SAFETY PROTECTION STATE FOR OLD MEMORY CARRIEOVER
+# ✅ FORCE SANITIZE RUNTIME CACHE (Removes any stuck 'WAITING' text instantly)
+for symbol_key in ["BTCUSD", "ETHUSD"]:
+    if mem.last_triggered_setup_info[symbol_key]["entry"] == "WAITING":
+        mem.last_triggered_setup_info[symbol_key] = {"entry": "-", "sl": "-", "t1": "-", "t2": "-", "status": "🔵 SCANNING FOR SETUPS...", "live_pnl": 0.0}
+
 if not hasattr(mem, 'symbol_switches') or mem.symbol_switches is None:
     mem.symbol_switches = {"BTCUSD": True, "ETHUSD": True}
 
@@ -161,7 +166,7 @@ def add_log(msg, type_icon="🚀"):
     if len(mem.last_terminal_logs) > 20: mem.last_terminal_logs.pop()
 
 # =====================================================
-# DELTA INDIA API CONNECTORS (OPTIMISED AND TRACKED)
+# DELTA INDIA API CONNECTORS
 # =====================================================
 def send_signed_request(method, path, api_key, api_secret, payload=None):
     if not api_key or not api_secret: return {"success": False, "error": "Keys Missing"}
@@ -179,12 +184,7 @@ def send_signed_request(method, path, api_key, api_secret, payload=None):
 
 def place_breakout_entry_order(symbol, size, side, trigger_price, api_key, api_secret):
     if size <= 0: return {"success": False, "error": "Size cannot be zero"}
-    
-    if "BTCUSD" in symbol:
-        final_price = str(round(float(trigger_price) * 2) / 2)
-    else:
-        final_price = str(round(float(trigger_price), 2))
-
+    final_price = str(round(float(trigger_price) * 2) / 2) if "BTCUSD" in symbol else str(round(float(trigger_price), 2))
     payload = {
         "product_symbol": symbol, "size": int(size), "side": side.lower(),
         "order_type": "market_order", "stop_order_type": "stop_loss_order",
@@ -193,12 +193,10 @@ def place_breakout_entry_order(symbol, size, side, trigger_price, api_key, api_s
     res = send_signed_request("POST", "/v2/orders", api_key, api_secret, payload)
     if res and res.get("success") is True: 
         return {"success": True, "order_id": res["result"].get("id")}
-    
     err_explanation = res.get("error", {}).get("explanation", "") if res else ""
     err_msg = res.get("error", {}).get("message", "Execution Rejected") if res else "Unknown API Error"
     if "margin" in err_explanation.lower() or "insufficient" in err_explanation.lower() or "margin" in err_msg.lower():
         return {"success": False, "error": "INSUFFICIENT_MARGIN"}
-        
     return {"success": False, "error": err_msg}
 
 def cancel_order(order_id, symbol, api_key, api_secret):
@@ -230,11 +228,7 @@ def close_position_market(symbol, api_key, api_secret):
 
 def place_stop_loss(symbol, size, side, sl_price, api_key, api_secret):
     if size <= 0: return None
-    if "BTCUSD" in symbol:
-        final_sl = str(round(float(sl_price) * 2) / 2)
-    else:
-        final_sl = str(round(float(sl_price), 2))
-
+    final_sl = str(round(float(sl_price) * 2) / 2) if "BTCUSD" in symbol else str(round(float(sl_price), 2))
     payload = {
         "product_symbol": symbol, "size": int(size), "side": side.lower(),
         "order_type": "market_order", "stop_order_type": "stop_loss_order",   
@@ -246,10 +240,7 @@ def place_stop_loss(symbol, size, side, sl_price, api_key, api_secret):
 
 def place_limit_profit_target(symbol, size, side, price, api_key, api_secret):
     if size <= 0: return None
-    if "BTCUSD" in symbol:
-        final_price = str(round(float(price) * 2) / 2)
-    else:
-        final_price = str(round(float(price), 2))
+    final_price = str(round(float(price) * 2) / 2) if "BTCUSD" in symbol else str(round(float(price), 2))
     payload = {
         "product_symbol": symbol, "size": int(size), "side": side.lower(),
         "order_type": "limit_order", "limit_price": final_price, "reduce_only": True
@@ -266,18 +257,6 @@ def get_open_position_qty(symbol, api_key, api_secret):
                 if pos.get("product_symbol") == symbol: return abs(int(pos.get("size", 0)))
         return 0
     except: return 0
-
-def check_any_live_position_on_exchange(shared_mem):
-    if not shared_mem.users_db: return None
-    first_user = list(shared_mem.users_db.keys())[0]
-    u_db = shared_mem.users_db[first_user]
-    try:
-        res = send_signed_request("GET", "/v2/positions/margined", u_db['api_key'], u_db['api_secret'])
-        if res and "result" in res:
-            for pos in res["result"]:
-                if abs(int(pos.get("size", 0))) > 0: return pos.get("product_symbol")
-        return None
-    except: return None
 
 def rsi_calc(close, period=14):
     delta = close.diff()
@@ -300,7 +279,7 @@ def fetch_candles_df(symbol, timeframe, limit=200):
     except: return None
 
 # =====================================================
-# CORE PIPELINE TRADE ENGINE AUTOMATION (FIXED & LIVE)
+# CORE PIPELINE TRADE ENGINE AUTOMATION (RE-ARCHITECTED)
 # =====================================================
 def core_execution_engine(shared_mem):
     while True:
@@ -315,139 +294,144 @@ def core_execution_engine(shared_mem):
                     if r and "result" in r: shared_mem.ticker_feeds[sym]["ltp"] = round(float(r["result"].get("mark_price", 0)), 2)
                 except: pass
 
-            true_live_asset = check_any_live_position_on_exchange(shared_mem)
-            for sym in symbols:
-                if true_live_asset != sym and sym in shared_mem.active_trades:
-                    any_user_key = list(shared_mem.active_trades[sym].keys())[0] if shared_mem.active_trades[sym] else None
-                    if any_user_key and shared_mem.active_trades[sym][any_user_key].get('is_triggered', False):
-                        shared_mem.active_trades[sym].clear()
-                        shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                        add_log(f"Exchange Sync: States cleared for {sym}.", type_icon="🔄")
-
+            # 🔄 HIGH STABILITY MATRIX MONITORS (Tracks Multi-User Assets Accurately)
             for sym in symbols:
                 live_price = shared_mem.ticker_feeds[sym]["ltp"]
                 if not live_price or sym not in shared_mem.active_trades: continue
                 
+                any_user_active_on_exchange = False
+                any_trade_ever_triggered = False
+                total_pnl = 0.0
+
                 for user in list(shared_mem.active_trades[sym].keys()):
-                    trade = shared_mem.active_trades[sym][user]
                     u_db = shared_mem.users_db.get(user)
                     if not u_db or not u_db.get('api_key') or not u_db.get('active', True): continue
                     
+                    trades_list = shared_mem.active_trades[sym][user]
                     ex_qty = get_open_position_qty(sym, u_db['api_key'], u_db['api_secret'])
-                    mult = 1 if trade['side'] == 'buy' else -1
-                    calc_pnl = round((live_price - trade['entry_price']) * mult * trade['qty'], 2)
-                    trade['live_pnl'] = calc_pnl
-                    shared_mem.last_triggered_setup_info[sym]["live_pnl"] = calc_pnl
+                    
+                    if ex_qty > 0:
+                        any_user_active_on_exchange = True
 
-                    # 1. PRE-ENTRY VALIDATION CHECK
-                    if not trade['is_triggered']:
-                        is_sl_breached_pre_entry = (trade['side'] == 'buy' and live_price <= trade['initial_sl']) or \
-                                                   (trade['side'] == 'sell' and live_price >= trade['initial_sl'])
-                        if is_sl_breached_pre_entry:
-                            cancel_order(trade['entry_order_id'], sym, u_db['api_key'], u_db['api_secret'])
-                            del shared_mem.active_trades[sym][user]
-                            shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                            add_log(f"Pre-Entry SL breached on {sym}. Order cancelled.", type_icon="⚠️")
-                            continue
-                        
-                        if ex_qty > 0:
-                            trade['is_triggered'] = True
-                            trade['qty'] = ex_qty  
-                            shared_mem.last_triggered_setup_info[sym]["entry"] = f"${trade['entry_price']:,.2f} (FILLED)"
-                            shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['sl']:,.2f} (ACTIVE)"
-                            shared_mem.last_triggered_setup_info[sym]["status"] = "ENTRY FILLED (SL LIVE)"
-                            add_log(f"💥 Breakout Triggered for {user} on {sym}!", type_icon="⚡")
-                            
-                            opposite_side = "sell" if trade['side'] == 'buy' else 'buy'
-                            
-                            # Place active stop loss on exchange
-                            sl_id = place_stop_loss(sym, ex_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
-                            trade['exchange_sl_id'] = sl_id
-                            
-                            # Calculate exit quantities for targets
-                            q_t1 = int(ex_qty * 0.50)
-                            q_t2 = int(ex_qty * 0.25)
-                            q_t21 = ex_qty - q_t1 - q_t2
-                            
-                            # Place targets as absolute limit orders on exchange (LMT -> Pic 531)
-                            trade['exchange_t1_id'] = place_limit_profit_target(sym, q_t1, opposite_side, trade['targets'][1], u_db['api_key'], u_db['api_secret']) if q_t1 > 0 else None
-                            trade['exchange_t2_id'] = place_limit_profit_target(sym, q_t2, opposite_side, trade['targets'][2], u_db['api_key'], u_db['api_secret']) if q_t2 > 0 else None
-                            trade['exchange_t21_id'] = place_limit_profit_target(sym, q_t21, opposite_side, trade['targets'][21], u_db['api_key'], u_db['api_secret']) if q_t21 > 0 else None
-                            
-                            add_log(f"Target Orders Synchronized on Exchange: T1 Qty({q_t1}), T2 Qty({q_t2}), T21 Qty({q_t21})", type_icon="🎯")
-                            continue
+                    for trade in list(trades_list):
+                        if trade.get('is_triggered', False):
+                            any_trade_ever_triggered = True
 
-                    # 2. RUNTIME ACTIVE TRAILING & PARTIAL TARGET MANAGEMENT MATRIX
-                    if trade['is_triggered']:
-                        is_hard_sl_hit = (trade['side'] == 'buy' and live_price <= trade['sl']) or \
-                                         (trade['side'] == 'sell' and live_price >= trade['sl'])
-                        
-                        if ex_qty == 0 or is_hard_sl_hit:
-                            cancel_all_orders_for_symbol(sym, u_db['api_key'], u_db['api_secret'])
-                            if ex_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
-                            del shared_mem.active_trades[sym][user]
-                            shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                            add_log(f"Stop-Loss Breached / Position Flattened for {user} on {sym}. Target open orders canceled.", type_icon="🛑")
-                            continue
+                        mult = 1 if trade['side'] == 'buy' else -1
+                        calc_pnl = round((live_price - trade['entry_price']) * mult * trade['qty'], 2)
+                        trade['live_pnl'] = calc_pnl
+                        total_pnl += calc_pnl
 
-                        current_high_target_hit = trade['current_stage']
-                        for target_idx in range(current_high_target_hit + 1, 22):
-                            target_price_level = trade['targets'][target_idx]
-                            is_target_passed = (trade['side'] == 'buy' and live_price >= target_price_level) or \
-                                               (trade['side'] == 'sell' and live_price <= target_price_level)
+                        # 1. PRE-ENTRY CHECK MATRIX
+                        if not trade['is_triggered']:
+                            is_sl_breached_pre_entry = (trade['side'] == 'buy' and live_price <= trade['initial_sl']) or \
+                                                       (trade['side'] == 'sell' and live_price >= trade['initial_sl'])
+                            if is_sl_breached_pre_entry:
+                                cancel_order(trade['entry_order_id'], sym, u_db['api_key'], u_db['api_secret'])
+                                if trade in trades_list: trades_list.remove(trade)
+                                add_log(f"Pre-Entry SL breached on {sym} ({trade['strategy']}) for {user}. Order cancelled.", type_icon="⚠️")
+                                continue
                             
-                            if is_target_passed:
-                                trade['current_stage'] = target_idx
+                            if ex_qty > 0:
+                                trade['is_triggered'] = True
+                                any_trade_ever_triggered = True
+                                shared_mem.last_triggered_setup_info[sym]["entry"] = f"${trade['entry_price']:,.2f} (FILLED)"
+                                shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['sl']:,.2f} (ACTIVE)"
+                                shared_mem.last_triggered_setup_info[sym]["status"] = f"🟢 {trade['strategy']} LIVE (SL ACTIVE)"
+                                add_log(f"💥 Breakout Triggered for {user} on {sym} via {trade['strategy']}!", type_icon="⚡")
+                                
                                 opposite_side = "sell" if trade['side'] == 'buy' else 'buy'
+                                trade['exchange_sl_id'] = place_stop_loss(sym, trade['qty'], opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
                                 
-                                # Trailing SL: Cancel & Re-place Matrix
-                                if trade.get('exchange_sl_id'):
-                                    cancel_order(trade['exchange_sl_id'], sym, u_db['api_key'], u_db['api_secret'])
+                                q_t1 = int(trade['qty'] * 0.50)
+                                q_t2 = int(trade['qty'] * 0.25)
+                                q_t21 = trade['qty'] - q_t1 - q_t2
                                 
-                                if target_idx == 1:
-                                    trade['sl'] = trade['entry_price']  
-                                    status_str = "TA1 HIT (SL @ COST)"
-                                    add_log(f"🎯 Target 1 Cross verified! 50% Qty processed. Remaining SL trailed to Cost.", type_icon="💰")
+                                trade['exchange_t1_id'] = place_limit_profit_target(sym, q_t1, opposite_side, trade['targets'][1], u_db['api_key'], u_db['api_secret']) if q_t1 > 0 else None
+                                trade['exchange_t2_id'] = place_limit_profit_target(sym, q_t2, opposite_side, trade['targets'][2], u_db['api_key'], u_db['api_secret']) if q_t2 > 0 else None
+                                trade['exchange_t21_id'] = place_limit_profit_target(sym, q_t21, opposite_side, trade['targets'][21], u_db['api_key'], u_db['api_secret']) if q_t21 > 0 else None
+                                add_log(f"[{trade['strategy']}] Target Orders Synchronized on Exchange.", type_icon="🎯")
+                                continue
+
+                        # 2. RUNTIME LIVE TRACKING & TRAILING MATRIX
+                        if trade['is_triggered']:
+                            is_hard_sl_hit = (trade['side'] == 'buy' and live_price <= trade['sl']) or \
+                                             (trade['side'] == 'sell' and live_price >= trade['sl'])
+                            
+                            if ex_qty == 0 or is_hard_sl_hit:
+                                cancel_all_orders_for_symbol(sym, u_db['api_key'], u_db['api_secret'])
+                                if ex_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
+                                if trade in trades_list: trades_list.remove(trade)
+                                add_log(f"Stop-Loss Breached / Position Flattened for {user} on {sym} ({trade['strategy']}).", type_icon="🛑")
+                                continue
+
+                            current_high_target_hit = trade['current_stage']
+                            for target_idx in range(current_high_target_hit + 1, 22):
+                                target_price_level = trade['targets'][target_idx]
+                                is_target_passed = (trade['side'] == 'buy' and live_price >= target_price_level) or \
+                                                   (trade['side'] == 'sell' and live_price <= target_price_level)
+                                
+                                if is_target_passed:
+                                    trade['current_stage'] = target_idx
+                                    opposite_side = "sell" if trade['side'] == 'buy' else 'buy'
                                     
-                                elif target_idx == 2:
-                                    trade['sl'] = trade['targets'][1]   
-                                    status_str = "TA2 HIT (SL @ TA1)"
-                                    add_log(f"🎯 Target 2 Cross verified! 25% Qty processed. Remaining SL trailed to TA1.", type_icon="💰")
+                                    if trade.get('exchange_sl_id'):
+                                        cancel_order(trade['exchange_sl_id'], sym, u_db['api_key'], u_db['api_secret'])
                                     
-                                else:
-                                    trade['sl'] = trade['targets'][target_idx - 1]
-                                    status_str = f"TA{target_idx} HIT (SL @ TA{target_idx-1})"
-                                    add_log(f"🔄 📈 Target {target_idx} crossed. SL trailed to TA{target_idx-1}.", type_icon="🔄")
-                                
-                                updated_live_qty = get_open_position_qty(sym, u_db['api_key'], u_db['api_secret'])
-                                if updated_live_qty > 0:
-                                    trade['exchange_sl_id'] = place_stop_loss(sym, updated_live_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
-                                
-                                shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['sl']:,.2f}"
-                                shared_mem.last_triggered_setup_info[sym]["status"] = status_str
-                                
-                                if target_idx == 21:
-                                    cancel_all_orders_for_symbol(sym, u_db['api_key'], u_db['api_secret'])
-                                    if updated_live_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
-                                    del shared_mem.active_trades[sym][user]
-                                    shared_mem.last_triggered_setup_info[sym] = {"entry": "WAITING", "sl": "WAITING", "t1": "WAITING", "t2": "WAITING", "status": "SCANNING ENGINE", "live_pnl": 0.0}
-                                    add_log(f"🏆 MAX TARGET 21 REACHED! Matrix flattened.", type_icon="👑")
-                                break
+                                    if target_idx == 1:
+                                        trade['sl'] = trade['entry_price']  
+                                        status_str = f"🎯 {trade['strategy']} TA1 HIT (SL @ COST)"
+                                        add_log(f"🎯 [{trade['strategy']}] Target 1 Hit! SL trailed to Cost.", type_icon="💰")
+                                    elif target_idx == 2:
+                                        trade['sl'] = trade['targets'][1]   
+                                        status_str = f"🎯 {trade['strategy']} TA2 HIT (SL @ TA1)"
+                                        add_log(f"🎯 [{trade['strategy']}] Target 2 Hit! SL trailed to TA1.", type_icon="💰")
+                                    else:
+                                        trade['sl'] = trade['targets'][target_idx - 1]
+                                        status_str = f"🔄 {trade['strategy']} TA{target_idx} HIT (SL TRAILED)"
+                                        add_log(f"🔄 [{trade['strategy']}] Target {target_idx} hit. SL trailed to TA{target_idx-1}.", type_icon="🔄")
+                                    
+                                    time.sleep(0.8) # Critical sync delay buffer 
+                                    updated_live_qty = get_open_position_qty(sym, u_db['api_key'], u_db['api_secret'])
+                                    
+                                    # ✅ Core Fix: Re-register trailing stop loss seamlessly with the remaining qty!
+                                    if updated_live_qty > 0:
+                                        trade['exchange_sl_id'] = place_stop_loss(sym, updated_live_qty, opposite_side, trade['sl'], u_db['api_key'], u_db['api_secret'])
+                                        add_log(f"🛡️ New Trailing SL registered for remaining qty: {updated_live_qty}", type_icon="🛡️")
+                                    
+                                    shared_mem.last_triggered_setup_info[sym]["sl"] = f"${trade['sl']:,.2f} (TRAILED)"
+                                    shared_mem.last_triggered_setup_info[sym]["status"] = status_str
+                                    
+                                    if target_idx == 21:
+                                        cancel_all_orders_for_symbol(sym, u_db['api_key'], u_db['api_secret'])
+                                        if updated_live_qty > 0: close_position_market(sym, u_db['api_key'], u_db['api_secret'])
+                                        if trade in trades_list: trades_list.remove(trade)
+                                        add_log(f"🏆 MAX TARGET 21 REACHED for {trade['strategy']}! Position flattened.", type_icon="👑")
+                                    break
+                
+                shared_mem.last_triggered_setup_info[sym]["live_pnl"] = total_pnl
+
+                # ✅ SAFETY FILTER APPLIED: Only reset state when ALL active users have zero positions
+                if any_trade_ever_triggered and not any_user_active_on_exchange:
+                    shared_mem.active_trades[sym].clear()
+                    shared_mem.last_triggered_setup_info[sym] = {"entry": "-", "sl": "-", "t1": "-", "t2": "-", "status": "🔵 SCANNING FOR SETUPS...", "live_pnl": 0.0}
+                    add_log(f"Exchange Sync: All live trades completed. States reset for {sym}.", type_icon="🔄")
 
             # 3. SIGNAL GEN MATRIX
             if shared_mem.users_db and not shared_mem.is_processing:
                 for sym in symbols:
                     sym_switches = getattr(shared_mem, 'symbol_switches', {"BTCUSD": True, "ETHUSD": True})
-                    if not sym_switches.get(sym, True):
-                        continue 
+                    if not sym_switches.get(sym, True): continue 
 
-                    if sym in shared_mem.active_trades and len(shared_mem.active_trades[sym]) > 0: continue
-                    valid_users = [u for u, data in shared_mem.users_db.items() if data.get('api_key')]
+                    valid_users = [u for u, data in shared_mem.users_db.items() if data.get('api_key') and data.get('active', True)]
                     if not valid_users: continue
                     first_user = valid_users[0]
                     
-                    if get_open_position_qty(sym, shared_mem.users_db[first_user]['api_key'], shared_mem.users_db[first_user]['api_secret']) > 0: continue
-                    if true_live_asset is not None and true_live_asset != sym: continue 
+                    running_strats = []
+                    if sym in shared_mem.active_trades and first_user in shared_mem.active_trades[sym]:
+                        running_strats = [t.get('strategy') for t in shared_mem.active_trades[sym][first_user]]
+                    
+                    is_any_trade_active = any(len(shared_mem.active_trades.get(s, {}).get(u, [])) > 0 for s in symbols for u in valid_users)
 
                     df_15m = fetch_candles_df(sym, "15m", limit=200)
                     df_5m = fetch_candles_df(sym, "5m", limit=200)
@@ -471,38 +455,38 @@ def core_execution_engine(shared_mem):
                     c_time = df_1m["time"].iloc[-2]
                     
                     if sym in shared_mem.ordered_candles and shared_mem.ordered_candles[sym] == c_time: continue
-                    triggered, s_key, side, entry, sl = False, "", "", 0.0, 0.0
                     
-                    # 🟢 BUY SIDE
+                    triggered = False
+                    s_key = ""
+                    side = ""
+                    
                     if shared_mem.strategy_switches["2-STAR BUY"] and rsi_1 > 60 and rsi_1_prev <= 60 and close_1m > df_1m["BB_up"].iloc[-2]:
-                        triggered, s_key, side = True, "2-STAR BUY", "buy"
+                        s_key, side = "2-STAR BUY", "buy"
                     elif shared_mem.strategy_switches["5-STAR LONG"] and rsi_15 >= 60 and rsi_5 >= 60 and rsi_1 > 40 and rsi_1 > rsi_1_prev and (43 >= rsi_1_prev >= 20):
-                        triggered, s_key, side = True, "5-STAR LONG", "buy"
+                        s_key, side = "5-STAR LONG", "buy"
                     elif shared_mem.strategy_switches["5-STAR BB BUY"] and rsi_15 > 60 and rsi_5 > 60 and rsi_1_prev < 61 and rsi_1 >= 60 and close_1m > df_1m["BB_up"].iloc[-2]:
-                        triggered, s_key, side = True, "5-STAR BB BUY", "buy"
-                    
-                    if triggered and side == "buy":
-                        raw_entry = float(df_1m["high"].iloc[-2])
-                        raw_sl = float(df_1m["low"].iloc[-2])
-                        entry = round(raw_entry * 2) / 2 if sym == "BTCUSD" else round(raw_entry, 2)
-                        sl = round(raw_sl * 2) / 2 if sym == "BTCUSD" else round(raw_sl, 2)
-
-                    # 🔴 SELL SIDE
+                        s_key, side = "5-STAR BB BUY", "buy"
                     elif shared_mem.strategy_switches["2-STAR SELL"] and rsi_1 < 40 and rsi_1_prev >= 40 and close_1m < df_1m["BB_low"].iloc[-2]:
-                        triggered, s_key, side = True, "2-STAR SELL", "sell"
+                        s_key, side = "2-STAR SELL", "sell"
                     elif shared_mem.strategy_switches["5-STAR SHORT"] and rsi_15 <= 40 and rsi_5 <= 40 and rsi_1 < 60 and rsi_1 < rsi_1_prev and (80 >= rsi_1_prev >= 57):
-                        triggered, s_key, side = True, "5-STAR SHORT", "sell"
+                        s_key, side = "5-STAR SHORT", "sell"
                     elif shared_mem.strategy_switches["5-STAR BB SELL"] and rsi_15 < 40 and rsi_5 < 40 and rsi_1_prev > 39 and rsi_1 <= 40 and close_1m < df_1m["BB_low"].iloc[-2]:
-                        triggered, s_key, side = True, "5-STAR BB SELL", "sell"
+                        s_key, side = "5-STAR BB SELL", "sell"
                         
-                    if triggered and side == "sell":
-                        raw_entry = float(df_1m["low"].iloc[-2])
-                        raw_sl = float(df_1m["high"].iloc[-2])
-                        entry = round(raw_entry * 2) / 2 if sym == "BTCUSD" else round(raw_entry, 2)
-                        sl = round(raw_sl * 2) / 2 if sym == "BTCUSD" else round(raw_sl, 2)
+                    if s_key != "":
+                        if is_any_trade_active:
+                            if s_key == "5-STAR BB BUY" and "5-STAR LONG" in running_strats and "5-STAR BB BUY" not in running_strats: triggered = True
+                            elif s_key == "5-STAR BB SELL" and "5-STAR SHORT" in running_strats and "5-STAR BB SELL" not in running_strats: triggered = True
+                            else: triggered = False 
+                        else: triggered = True
 
                     if triggered:
+                        raw_entry = float(df_1m["high"].iloc[-2]) if side == "buy" else float(df_1m["low"].iloc[-2])
+                        raw_sl = float(df_1m["low"].iloc[-2]) if side == "buy" else float(df_1m["high"].iloc[-2])
+                        entry = round(raw_entry * 2) / 2 if sym == "BTCUSD" else round(raw_entry, 2)
+                        sl = round(raw_sl * 2) / 2 if sym == "BTCUSD" else round(raw_sl, 2)
                         risk = abs(entry - sl)
+                        
                         if risk > 0:
                             shared_mem.is_processing = True
                             shared_mem.ordered_candles[sym] = c_time
@@ -514,7 +498,7 @@ def core_execution_engine(shared_mem):
                                 target_mesh[i] = round(raw_target * 2) / 2 if sym == "BTCUSD" else round(raw_target, 2)
 
                             shared_mem.last_triggered_setup_info[sym] = {
-                                "entry": f"${entry:,.2f} (Pending)", "sl": f"${sl:,.2f} (On Trigger)", "t1": f"${target_mesh[1]:,.2f}", "t2": f"${target_mesh[2]:,.2f}", "status": f"{s_key} ({side.upper()}) (Pending)", "live_pnl": 0.0
+                                "entry": f"${entry:,.2f} (PENDING)", "sl": f"${sl:,.2f} (PENDING)", "t1": f"${target_mesh[1]:,.2f}", "t2": f"${target_mesh[2]:,.2f}", "status": f"⏳ {s_key} ({side.upper()}) DETECTED", "live_pnl": 0.0
                             }
                             
                             if sym not in shared_mem.active_trades: shared_mem.active_trades[sym] = {}
@@ -522,25 +506,25 @@ def core_execution_engine(shared_mem):
                             for user, u_db in shared_mem.users_db.items():
                                 if not u_db.get("active", True): continue
                                 u_qty = int(u_db["btc_qty"] if sym == "BTCUSD" else u_db["eth_qty"])
-                                
                                 order_status = place_breakout_entry_order(sym, u_qty, side, entry, u_db['api_key'], u_db['api_secret'])
                                 
                                 if order_status["success"]:
-                                    add_log(f"Setup registered at ${entry} for {sym}.", type_icon="⏳")
-                                    shared_mem.active_trades[sym][user] = {
-                                        'side': side, 'entry_price': entry, 'initial_sl': sl, 'sl': sl, 
-                                        'targets': target_mesh, 'current_stage': 0, 'qty': u_qty, 
-                                        'entry_order_id': order_status["order_id"], 'exchange_sl_id': None, 'is_triggered': False, 'live_pnl': 0.0,
+                                    add_log(f"Setup [{s_key}] registered at ${entry} for {sym}.", type_icon="⏳")
+                                    if user not in shared_mem.active_trades[sym]: shared_mem.active_trades[sym][user] = []
+                                    shared_mem.active_trades[sym][user].append({
+                                        'strategy': s_key, 'side': side, 'entry_price': entry, 'initial_sl': sl, 'sl': sl, 
+                                        'targets': target_mesh, 'current_stage': 0, 'qty': u_qty, 'entry_order_id': order_status["order_id"], 
+                                        'exchange_sl_id': None, 'is_triggered': False, 'live_pnl': 0.0,
                                         'exchange_t1_id': None, 'exchange_t2_id': None, 'exchange_t21_id': None
-                                    }
+                                    })
                                     time.sleep(0.2)
                                 else:
                                     fail_reason = order_status["error"]
                                     if fail_reason == "INSUFFICIENT_MARGIN":
-                                        shared_mem.last_triggered_setup_info[sym]["status"] = "REJECTED - INSUFFICIENT MARGIN"
+                                        shared_mem.last_triggered_setup_info[sym]["status"] = "❌ REJECTED - INSUFFICIENT MARGIN"
                                         add_log(f"ORDER REJECTED for {user} on {sym}! Reason: INSUFFICIENT MARGIN.", type_icon="❌")
                                     else:
-                                        shared_mem.last_triggered_setup_info[sym]["status"] = f"REJECTED - {fail_reason.upper()}"
+                                        shared_mem.last_triggered_setup_info[sym]["status"] = f"❌ REJECTED - {fail_reason.upper()}"
                                         add_log(f"API Alert: {user} on {sym} rejected -> {fail_reason}", type_icon="❌")
                             break
             shared_mem.is_processing = False
@@ -593,10 +577,10 @@ with col_btc_w:
     pnl_val = btc_info.get("live_pnl", 0.0)
     pnl_class = "pnl-green" if pnl_val > 0 else ("pnl-red" if pnl_val < 0 else "pnl-gray")
     
-    cls_entry = "signal-value-active" if "Pending" not in btc_info['entry'] and btc_info['entry'] != "WAITING" else "signal-value-waiting"
-    cls_sl = "signal-value-active" if "On Trigger" not in btc_info['sl'] and btc_info['sl'] != "WAITING" else "signal-value-waiting"
-    cls_t1 = "signal-value-active" if btc_info['t1'] != "WAITING" else "signal-value-waiting"
-    cls_t2 = "signal-value-active" if btc_info['t2'] != "WAITING" else "signal-value-waiting"
+    cls_entry = "signal-value-active" if btc_info['entry'] != "-" else "signal-value-waiting"
+    cls_sl = "signal-value-active" if btc_info['sl'] != "-" else "signal-value-waiting"
+    cls_t1 = "signal-value-active" if btc_info['t1'] != "-" else "signal-value-waiting"
+    cls_t2 = "signal-value-active" if btc_info['t2'] != "-" else "signal-value-waiting"
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
@@ -632,10 +616,10 @@ with col_eth_w:
     pnl_val_eth = eth_info.get("live_pnl", 0.0)
     pnl_class_eth = "pnl-green" if pnl_val_eth > 0 else ("pnl-red" if pnl_val_eth < 0 else "pnl-gray")
     
-    cls_entry_eth = "signal-value-active" if "Pending" not in eth_info['entry'] and eth_info['entry'] != "WAITING" else "signal-value-waiting"
-    cls_sl_eth = "signal-value-active" if "On Trigger" not in eth_info['sl'] and eth_info['sl'] != "WAITING" else "signal-value-waiting"
-    cls_t1_eth = "signal-value-active" if eth_info['t1'] != "WAITING" else "signal-value-waiting"
-    cls_t2_eth = "signal-value-active" if eth_info['t2'] != "WAITING" else "signal-value-waiting"
+    cls_entry_eth = "signal-value-active" if eth_info['entry'] != "-" else "signal-value-waiting"
+    cls_sl_eth = "signal-value-active" if eth_info['sl'] != "-" else "signal-value-waiting"
+    cls_t1_eth = "signal-value-active" if eth_info['t1'] != "-" else "signal-value-waiting"
+    cls_t2_eth = "signal-value-active" if eth_info['t2'] != "-" else "signal-value-waiting"
 
     st.markdown(f"""
     <div class="pnl-analytics-card">
@@ -721,16 +705,12 @@ with col_body_sw1:
     st.markdown("<span style='color:#38bdf8; font-size:12px; font-weight:bold; text-transform:uppercase;'>🎯 SYMBOL SELECTION MATRIX:</span>", unsafe_allow_html=True)
     
     csym_b1, csym_b2 = st.columns([0.1, 0.9])
-    with csym_b1: 
-        mem.symbol_switches["BTCUSD"] = st.checkbox("", value=mem.symbol_switches.get("BTCUSD", True), key="chk_sym_btc")
-    with csym_b2: 
-        st.markdown('<span class="neon-blue-lbl" style="line-height: 1.8;">ALLOW BTCUSD TRADING</span>', unsafe_allow_html=True)
+    with csym_b1: mem.symbol_switches["BTCUSD"] = st.checkbox("", value=mem.symbol_switches.get("BTCUSD", True), key="chk_sym_btc")
+    with csym_b2: st.markdown('<span class="neon-blue-lbl" style="line-height: 1.8;">ALLOW BTCUSD TRADING</span>', unsafe_allow_html=True)
         
     csym_e1, csym_e2 = st.columns([0.1, 0.9])
-    with csym_e1: 
-        mem.symbol_switches["ETHUSD"] = st.checkbox("", value=mem.symbol_switches.get("ETHUSD", True), key="chk_sym_eth")
-    with csym_e2: 
-        st.markdown('<span class="neon-blue-lbl" style="line-height: 1.8;">ALLOW ETHUSD TRADING</span>', unsafe_allow_html=True)
+    with csym_e1: mem.symbol_switches["ETHUSD"] = st.checkbox("", value=mem.symbol_switches.get("ETHUSD", True), key="chk_sym_eth")
+    with csym_e2: st.markdown('<span class="neon-blue-lbl" style="line-height: 1.8;">ALLOW ETHUSD TRADING</span>', unsafe_allow_html=True)
 
     st.markdown("<span style='color:#ef4444; font-size:11px;'>🚨 EMERGENCY OPERATIONS CONTROLLER:</span>", unsafe_allow_html=True)
     if st.button("💥 GLOBAL KILL SWITCH (SQUARE OFF ALL)", use_container_width=True):
