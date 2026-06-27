@@ -7,6 +7,21 @@ import urllib3
 import streamlit as st
 import datetime
 from auth import load_users, save_users
+import streamlit as st
+import fyers_login # Aapki file ka naam
+
+# Initialize login status
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    st.title("🔐 Fyers Authentication")
+    # Yahan fyers_login ka UI function call karo
+    fyers_login.show_login_page() 
+    st.stop() # Login hone tak aage ka dashboard load nahi hoga
+
+# Agar logged_in True hai, toh niche aapka main dashboard code chalega
+# ... (Aapka baki ka code)
 
 # ✅ SYSTEM STABILITY FOR TERMUX / IPV4 OPTIMIZATION
 import urllib3.util.connection as urllib3_cn
