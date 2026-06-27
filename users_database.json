@@ -1,18 +1,70 @@
 {
-    "Sushil": {
+    "Yunay": {
         "password": "yunu",
+        "api_key": "DlbgGx4bl5kEgiMTAhOuZuTg6x65up",
+        "api_secret": "RmiyDnDKRMY7NcxeyGzqCNsJ97WfkDpUguil0Spbwafl12KAnIg26FkdsnNU",
+        "btc_qty": 4,
+        "eth_qty": 4,
+        "risk_mode": false,
+        "risk_value": 1000.0,
+        "active": true,
+        "engine_running": true,
+        "symbol_switches": {
+            "BTCUSD": true,
+            "ETHUSD": true
+        },
+        "strategy_switches": {
+            "2-STAR BUY": true,
+            "2-STAR SELL": true,
+            "5-STAR LONG": true,
+            "5-STAR SHORT": true,
+            "5-STAR BB BUY": true,
+            "5-STAR BB SELL": true
+        }
+    },
+    "Sushil": {
+        "password": "1122",
         "api_key": "d2KmwWf7VCyowbwNwDc3So26Bwjbs0",
         "api_secret": "q2Oz3B6L2J7MrrkYJXsZkE6sLXPpAz2t7dCD55v1ke11wEtTI72j0EqdcsXI",
         "btc_qty": 4,
-        "eth_qty": 4
-        "status": "LIVE"
+        "eth_qty": 4,
+        "risk_mode": false,
+        "risk_value": 100.0,
+        "active": false,
+        "symbol_switches": {
+            "BTCUSD": true,
+            "ETHUSD": true
+        },
+        "strategy_switches": {
+            "2-STAR BUY": true,
+            "2-STAR SELL": true,
+            "5-STAR LONG": true,
+            "5-STAR SHORT": true,
+            "5-STAR BB BUY": true,
+            "5-STAR BB SELL": true
+        }
     },
-    "Verma": {
-        "password": "aabb",
+    "Master_Trader": {
+        "password": "admin",
         "api_key": "",
         "api_secret": "",
+        "active": false,
+        "engine_running": false,
         "btc_qty": 4,
-        "eth_qty": 4
-        "status": "LIVE"
+        "eth_qty": 4,
+        "risk_mode": false,
+        "risk_value": 1000.0,
+        "symbols": {
+            "BTCUSD": true,
+            "ETHUSD": true
+        },
+        "strategies": {
+            "2-STAR BUY": true,
+            "2-STAR SELL": true,
+            "5-STAR LONG": true,
+            "5-STAR SHORT": true,
+            "5-STAR BB BUY": true,
+            "5-STAR BB SELL": true
+        }
     }
 }
