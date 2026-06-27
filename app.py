@@ -66,6 +66,9 @@ class GlobalEngineMemory:
             sym: {"ltp": 0.0, "rsi_1m": 0.0, "rsi_5m": 0.0, "rsi_15m": 0.0}
             for sym in TOP_50_STOCKS
         }
+        
+        # Adding missing strategy metrics init to prevent KeyErrors later
+        self.strategy_metrics = {}
 
 if "mem_instance" not in st.session_state:
     if not hasattr(st, "_global_algo_memory"):
@@ -361,6 +364,16 @@ def core_execution_engine(shared_mem):
                     if ex_qty > 0: any_user_active_on_exchange = True
 
                     for trade in list(trades_list):
+                        # 🛠️ BUG FIX: AUTO-HEAL MISSING 'targets' KEY
+                        if 'targets' not in trade:
+                            calc_risk = abs(trade.get('entry_price', 0) - trade.get('initial_sl', trade.get('entry_price', 0)))
+                            if calc_risk == 0: calc_risk = 1.0 # Fallback risk
+                            t_mesh = {}
+                            for i in range(1, 22):
+                                raw_t = trade['entry_price'] + (i * calc_risk) if trade.get('side') == 'buy' else trade['entry_price'] - (i * calc_risk)
+                                t_mesh[i] = round_to_tick(raw_t)
+                            trade['targets'] = t_mesh
+
                         if trade.get('is_triggered', False): any_trade_ever_triggered = True
 
                         mult = 1 if trade['side'] == 'buy' else -1
