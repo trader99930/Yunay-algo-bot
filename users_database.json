@@ -7,7 +7,7 @@
         "eth_qty": 4,
         "risk_mode": false,
         "risk_value": 1000.0,
-        "active": false,
+        "active": true,
         "engine_running": true,
         "symbol_switches": {
             "BTCUSD": true,
